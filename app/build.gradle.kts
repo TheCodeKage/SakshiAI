@@ -6,12 +6,12 @@ plugins {
 
 android {
     namespace = "com.runanywhere.kotlin_starter_example"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.runanywhere.kotlin_starter_example"
         minSdk = 26
-        targetSdk = 35
+        targetSdk = 36
         versionCode = 1
         versionName = "1.0"
 
