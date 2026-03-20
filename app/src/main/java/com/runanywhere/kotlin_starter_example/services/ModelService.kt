@@ -51,7 +51,7 @@ class ModelService : ViewModel() {
     
     companion object {
         // Model IDs - using officially supported models
-        const val LLM_MODEL_ID = "qwen2.5-0.5b-instruct-q6_k"
+        const val LLM_MODEL_ID = "smollm2-360m-instruct-q8_0"
         const val STT_MODEL_ID = "sherpa-onnx-whisper-tiny.en"
         
         /**
@@ -62,8 +62,8 @@ class ModelService : ViewModel() {
             // LLM Model - Qwen 2.5 0.5B Instruct (better accuracy for structured extraction)
             RunAnywhere.registerModel(
                 id = LLM_MODEL_ID,
-                name = "Qwen 2.5 0.5B Instruct Q6_K",
-                url = "https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/qwen2.5-0.5b-instruct-q6_k.gguf",
+                name = "SmolLM2 360M Instruct Q8_0",
+                url = "https://huggingface.co/HuggingFaceTB/SmolLM2-360M-Instruct-GGUF/resolve/main/smollm2-360m-instruct-q8_0.gguf",
                 framework = InferenceFramework.LLAMA_CPP,
                 modality = ModelCategory.LANGUAGE,
                 memoryRequirement = 400_000_000

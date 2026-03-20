@@ -283,16 +283,79 @@ private fun PinEntryScreen(
  */
 @Composable
 private fun DecoyCalculatorScreen() {
-    val display = remember { mutableStateOf("0") }
+    var display by remember { mutableStateOf("0") }
+    var previousValue by remember { mutableStateOf("") }
+    var operator by remember { mutableStateOf("") }
+    var shouldResetDisplay by remember { mutableStateOf(false) }
+
+    fun onNumber(num: String) {
+        if (shouldResetDisplay) {
+            display = num
+            shouldResetDisplay = false
+        } else {
+            display = if (display == "0") num else display + num
+        }
+    }
+
+    fun onOperator(op: String) {
+        previousValue = display
+        operator = op
+        shouldResetDisplay = true
+    }
+
+    fun onEquals() {
+        val prev = previousValue.toDoubleOrNull() ?: return
+        val curr = display.toDoubleOrNull() ?: return
+        val result = when (operator) {
+            "÷" -> if (curr != 0.0) prev / curr else 0.0
+            "×" -> prev * curr
+            "−" -> prev - curr
+            "+" -> prev + curr
+            else -> curr
+        }
+        display = if (result % 1.0 == 0.0) result.toLong().toString() else result.toString()
+        operator = ""
+        previousValue = ""
+        shouldResetDisplay = true
+    }
+
+    fun onClear() {
+        display = "0"
+        previousValue = ""
+        operator = ""
+        shouldResetDisplay = false
+    }
+
+    fun onPercent() {
+        val value = display.toDoubleOrNull() ?: return
+        display = (value / 100).let {
+            if (it % 1.0 == 0.0) it.toLong().toString() else it.toString()
+        }
+    }
+
+    fun onPlusMinus() {
+        val value = display.toDoubleOrNull() ?: return
+        display = (-value).let {
+            if (it % 1.0 == 0.0) it.toLong().toString() else it.toString()
+        }
+    }
+
+    fun onDecimal() {
+        if (shouldResetDisplay) {
+            display = "0."
+            shouldResetDisplay = false
+        } else if (!display.contains(".")) {
+            display += "."
+        }
+    }
 
     Box(
         modifier = Modifier.fillMaxSize().background(Color(0xFF1C1C1E)),
         contentAlignment = Alignment.BottomCenter
     ) {
         Column(modifier = Modifier.fillMaxWidth().padding(12.dp)) {
-            // Display
             Text(
-                text = display.value,
+                text = display.take(9), // prevent overflow
                 fontSize = 72.sp,
                 color = Color.White,
                 textAlign = TextAlign.End,
@@ -314,7 +377,15 @@ private fun DecoyCalculatorScreen() {
                 ) {
                     row.forEach { (label, color) ->
                         Button(
-                            onClick = { display.value = if (label == "C") "0" else label },
+                            onClick = {
+                                when (label) {
+                                    "C" -> onClear()
+                                    "±" -> onPlusMinus()
+                                    "%" -> onPercent()
+                                    "÷", "×", "−", "+" -> onOperator(label)
+                                    else -> onNumber(label) // catches 1-9
+                                }
+                            },
                             modifier = Modifier.weight(1f).height(80.dp),
                             shape = RoundedCornerShape(40.dp),
                             colors = ButtonDefaults.buttonColors(containerColor = color)
@@ -323,31 +394,32 @@ private fun DecoyCalculatorScreen() {
                 }
             }
 
-            // Bottom row: 0 (wide), ., =
             Row(
                 modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 Button(
-                    onClick = { display.value = "0" },
+                    onClick = { onNumber("0") },
                     modifier = Modifier.weight(2f).height(80.dp),
                     shape = RoundedCornerShape(40.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF333333))
                 ) { Text("0", fontSize = 28.sp, color = Color.White) }
                 Button(
-                    onClick = {},
+                    onClick = { onDecimal() },
                     modifier = Modifier.weight(1f).height(80.dp),
                     shape = RoundedCornerShape(40.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF333333))
                 ) { Text(".", fontSize = 28.sp, color = Color.White) }
                 Button(
-                    onClick = {},
+                    onClick = { onEquals() },
                     modifier = Modifier.weight(1f).height(80.dp),
                     shape = RoundedCornerShape(40.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF9F0A))
                 ) { Text("=", fontSize = 28.sp, color = Color.White) }
             }
 
+            // Number buttons need to call onNumber — replace the rows loop above
+            // Actually wire 7-9, 4-6, 1-3 properly:
             Spacer(Modifier.height(16.dp))
         }
     }
