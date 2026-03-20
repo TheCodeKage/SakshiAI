@@ -74,6 +74,11 @@ dependencies {
     implementation(libs.kotlinx.coroutines.core)
     implementation(libs.kotlinx.coroutines.android)
     
+    // Security & Database Encryption
+    implementation("net.zetetic:android-database-sqlcipher:4.5.4")
+    implementation("androidx.sqlite:sqlite:2.4.0")
+    implementation("androidx.security:security-crypto:1.1.0-alpha06")
+    
     // RunAnywhere SDK
     implementation(libs.runanywhere.sdk)
     implementation(libs.runanywhere.llamacpp)

@@ -5,18 +5,19 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.runanywhere.kotlin_starter_example.services.ModelService
-import com.runanywhere.kotlin_starter_example.ui.screens.ChatScreen
-import com.runanywhere.kotlin_starter_example.ui.screens.HomeScreen
-import com.runanywhere.kotlin_starter_example.ui.screens.SpeechToTextScreen
-import com.runanywhere.kotlin_starter_example.ui.screens.TextToSpeechScreen
-import com.runanywhere.kotlin_starter_example.ui.screens.ToolCallingScreen
-import com.runanywhere.kotlin_starter_example.ui.screens.VisionScreen
-import com.runanywhere.kotlin_starter_example.ui.screens.VoicePipelineScreen
+import com.runanywhere.kotlin_starter_example.ui.screens.EntryScreen
+import com.runanywhere.kotlin_starter_example.ui.screens.TimelineScreen
+import com.runanywhere.kotlin_starter_example.ui.screens.RecordScreen
+import com.runanywhere.kotlin_starter_example.ui.screens.EntryDetailScreen
 import com.runanywhere.kotlin_starter_example.ui.theme.KotlinStarterTheme
 import android.util.Log
 import com.runanywhere.sdk.core.onnx.ONNX
@@ -69,61 +70,49 @@ fun RunAnywhereApp() {
     val navController = rememberNavController()
     val modelService: ModelService = viewModel()
     
-    NavHost(
-        navController = navController,
-        startDestination = "home"
-    ) {
-        composable("home") {
-            HomeScreen(
-                onNavigateToChat = { navController.navigate("chat") },
-                onNavigateToSTT = { navController.navigate("stt") },
-                onNavigateToTTS = { navController.navigate("tts") },
-                onNavigateToVoicePipeline = { navController.navigate("voice_pipeline") },
-                onNavigateToToolCalling = { navController.navigate("tool_calling") },
-                onNavigateToVision = { navController.navigate("vision") }
-            )
+    // Store encryption key in memory after successful PIN entry
+    var encryptionKey by remember { mutableStateOf<String?>(null) }
+    
+    NavHost(navController = navController, startDestination = "entry") {
+
+        composable("entry") {
+            EntryScreen(onPinCorrect = { key ->
+                encryptionKey = key
+                navController.navigate("timeline") {
+                    popUpTo("entry") { inclusive = true }
+                }
+            })
         }
-        
-        composable("chat") {
-            ChatScreen(
-                onNavigateBack = { navController.popBackStack() },
-                modelService = modelService
-            )
+
+        composable("timeline") {
+            encryptionKey?.let { key ->
+                TimelineScreen(
+                    encryptionKey = key,
+                    onNavigateToRecord = { navController.navigate("record") },
+                    onNavigateToDetail = { id -> navController.navigate("detail/$id") }
+                )
+            }
         }
-        
-        composable("stt") {
-            SpeechToTextScreen(
-                onNavigateBack = { navController.popBackStack() },
-                modelService = modelService
-            )
+
+        composable("record") {
+            encryptionKey?.let { key ->
+                RecordScreen(
+                    encryptionKey = key,
+                    onNavigateBack = { navController.popBackStack() },
+                    modelService = modelService
+                )
+            }
         }
-        
-        composable("tts") {
-            TextToSpeechScreen(
-                onNavigateBack = { navController.popBackStack() },
-                modelService = modelService
-            )
-        }
-        
-        composable("voice_pipeline") {
-            VoicePipelineScreen(
-                onNavigateBack = { navController.popBackStack() },
-                modelService = modelService
-            )
-        }
-        
-        composable("tool_calling") {
-            ToolCallingScreen(
-                onNavigateBack = { navController.popBackStack() },
-                modelService = modelService
-            )
-        }
-        
-        composable("vision") {
-            VisionScreen(
-                onNavigateBack = { navController.popBackStack() },
-                modelService = modelService
-            )
+
+        composable("detail/{incidentId}") { backStackEntry ->
+            val incidentId = backStackEntry.arguments?.getString("incidentId") ?: ""
+            encryptionKey?.let { key ->
+                EntryDetailScreen(
+                    incidentId = incidentId,
+                    encryptionKey = key,
+                    onNavigateBack = { navController.popBackStack() }
+                )
+            }
         }
     }
 }
