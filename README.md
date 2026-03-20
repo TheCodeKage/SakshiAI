@@ -105,7 +105,7 @@ Given a raw spoken testimony, the on-device model produces a structured incident
 
 ## Team
 
-*[Your team names here]*
+*BugCodes*
 
 ---
 
