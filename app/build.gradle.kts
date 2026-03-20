@@ -73,6 +73,7 @@ dependencies {
     // Coroutines
     implementation(libs.kotlinx.coroutines.core)
     implementation(libs.kotlinx.coroutines.android)
+    implementation("org.apache.commons:commons-compress:1.27.1")
     
     // Security & Database Encryption
     implementation("net.zetetic:android-database-sqlcipher:4.5.4")
