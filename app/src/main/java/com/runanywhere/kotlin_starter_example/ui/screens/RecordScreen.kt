@@ -30,7 +30,6 @@ import androidx.core.content.ContextCompat
 import com.runanywhere.kotlin_starter_example.data.IncidentProcessor
 import com.runanywhere.kotlin_starter_example.data.IncidentRepository
 import com.runanywhere.kotlin_starter_example.services.ModelService
-import com.runanywhere.kotlin_starter_example.ui.components.ModelLoaderWidget
 import com.runanywhere.kotlin_starter_example.ui.theme.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -38,7 +37,6 @@ import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
 import androidx.lifecycle.viewmodel.compose.viewModel
 
-// Audio recording helper class (copied from SpeechToTextScreen.kt)
 private class AudioRecorder {
     private var audioRecord: AudioRecord? = null
     private var isRecording = false
@@ -110,7 +108,6 @@ fun RecordScreen(
         ActivityResultContracts.RequestPermission()
     ) { granted -> hasPermission = granted }
 
-    // Pulse animation for record button
     val infiniteTransition = rememberInfiniteTransition(label = "pulse")
     val scale by infiniteTransition.animateFloat(
         initialValue = 1f,
@@ -119,16 +116,19 @@ fun RecordScreen(
         label = "scale"
     )
 
+    // Derived: are both models ready?
+    val modelsReady = modelService.isLLMLoaded && modelService.isSTTLoaded
+    // Is any download/load in flight?
+    val modelsLoading = modelService.isSTTDownloading || modelService.isSTTLoading ||
+            modelService.isLLMDownloading || modelService.isLLMLoading
+
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text("New Record") },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
-                            contentDescription = "Back"
-                        )
+                        Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back")
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = PrimaryDark)
@@ -144,35 +144,21 @@ fun RecordScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.SpaceBetween
         ) {
-            // Model loader — shown if models not ready
-            if (!modelService.isLLMLoaded || !modelService.isSTTLoaded) {
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    if (!modelService.isSTTLoaded) {
-                        ModelLoaderWidget(
-                            modelName = "Speech Recognition",
-                            isDownloading = modelService.isSTTDownloading,
-                            isLoading = modelService.isSTTLoading,
-                            isLoaded = modelService.isSTTLoaded,
-                            downloadProgress = modelService.sttDownloadProgress,
-                            onLoadClick = { modelService.downloadAndLoadSTT() }
-                        )
-                    }
-                    if (!modelService.isLLMLoaded) {
-                        ModelLoaderWidget(
-                            modelName = "AI Structuring Model",
-                            isDownloading = modelService.isLLMDownloading,
-                            isLoading = modelService.isLLMLoading,
-                            isLoaded = modelService.isLLMLoaded,
-                            downloadProgress = modelService.llmDownloadProgress,
-                            onLoadClick = { modelService.downloadAndLoadLLM() }
-                        )
-                    }
-                }
+            // ----------------------------------------------------------------
+            // Model loader panel — shown until both models are ready
+            // FIX: Single "Load AI Models" button triggers STT-then-LLM
+            // sequentially, preventing the registry race condition.
+            // ----------------------------------------------------------------
+            if (!modelsReady) {
+                ModelSetupPanel(
+                    modelService = modelService,
+                    modelsLoading = modelsLoading,
+                    onLoadClick = { modelService.downloadAndLoadSTTThenLLM() }
+                )
             }
 
             Spacer(Modifier.weight(1f))
 
-            // Status message
             Text(
                 text = statusMessage,
                 style = MaterialTheme.typography.bodyLarge,
@@ -183,7 +169,7 @@ fun RecordScreen(
 
             Spacer(Modifier.height(40.dp))
 
-            // Record button
+            // Record button — disabled until both models are ready
             if (!hasPermission) {
                 Button(
                     onClick = { permissionLauncher.launch(Manifest.permission.RECORD_AUDIO) },
@@ -197,7 +183,9 @@ fun RecordScreen(
                                 .size(140.dp)
                                 .scale(scale)
                                 .background(
-                                    Brush.radialGradient(listOf(AccentViolet.copy(alpha = 0.25f), Color.Transparent)),
+                                    Brush.radialGradient(
+                                        listOf(AccentViolet.copy(alpha = 0.25f), Color.Transparent)
+                                    ),
                                     CircleShape
                                 )
                         )
@@ -205,12 +193,13 @@ fun RecordScreen(
 
                     FloatingActionButton(
                         onClick = {
+                            if (!modelsReady) return@FloatingActionButton
                             when (recordState) {
                                 RecordState.IDLE, RecordState.DONE, RecordState.ERROR -> {
                                     val started = audioRecorder.startRecording()
                                     if (started) {
                                         recordState = RecordState.RECORDING
-                                        statusMessage = "Recording... tap again when finished"
+                                        statusMessage = "Recording… tap again when finished"
                                         showCrisisNote = false
                                     } else {
                                         statusMessage = "Could not start recording"
@@ -226,11 +215,9 @@ fun RecordScreen(
                                             }
                                             val record = IncidentProcessor.process(audioData)
                                             repository.saveIncident(record)
-
                                             if (record.severityTag == "Immediate Risk") {
                                                 showCrisisNote = true
                                             }
-
                                             recordState = RecordState.DONE
                                             statusMessage = "Saved. Your record is secure."
                                         } catch (e: Exception) {
@@ -239,32 +226,44 @@ fun RecordScreen(
                                         }
                                     }
                                 }
-                                RecordState.PROCESSING -> { /* do nothing while processing */ }
+                                RecordState.PROCESSING -> { /* wait */ }
                             }
                         },
                         modifier = Modifier.size(96.dp),
-                        containerColor = when (recordState) {
-                            RecordState.RECORDING -> AccentViolet
-                            RecordState.PROCESSING -> SurfaceCard
-                            RecordState.DONE -> AccentGreen
+                        containerColor = when {
+                            !modelsReady -> SurfaceCard.copy(alpha = 0.5f)
+                            recordState == RecordState.RECORDING -> AccentViolet
+                            recordState == RecordState.PROCESSING -> SurfaceCard
+                            recordState == RecordState.DONE -> AccentGreen
                             else -> AccentCyan
                         },
                         contentColor = Color.White
                     ) {
                         when (recordState) {
                             RecordState.PROCESSING -> CircularProgressIndicator(
-                                modifier = Modifier.size(36.dp), color = AccentCyan, strokeWidth = 3.dp
+                                modifier = Modifier.size(36.dp),
+                                color = AccentCyan,
+                                strokeWidth = 3.dp
                             )
                             RecordState.RECORDING -> Icon(Icons.Rounded.Stop, "Stop", Modifier.size(40.dp))
                             else -> Icon(Icons.Rounded.Mic, "Record", Modifier.size(40.dp))
                         }
                     }
                 }
+
+                if (!modelsReady && !modelsLoading) {
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "Load AI models above to enable recording",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = TextMuted,
+                        textAlign = TextAlign.Center
+                    )
+                }
             }
 
             Spacer(Modifier.height(32.dp))
 
-            // Crisis note — shown if Immediate Risk detected
             if (showCrisisNote) {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
@@ -282,10 +281,136 @@ fun RecordScreen(
                 Spacer(Modifier.height(12.dp))
             }
 
-            // Zero network indicator
             ZeroNetworkBadge()
 
             Spacer(Modifier.weight(1f))
+        }
+    }
+}
+
+/**
+ * Shows download/load progress for both models with a single trigger button.
+ * Progress is shown per-model as each completes sequentially.
+ */
+@Composable
+private fun ModelSetupPanel(
+    modelService: ModelService,
+    modelsLoading: Boolean,
+    onLoadClick: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = SurfaceCard)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            Text(
+                "AI Models Required",
+                style = MaterialTheme.typography.titleMedium,
+                color = TextPrimary
+            )
+            Text(
+                "Models are downloaded once and stored only on this device.",
+                style = MaterialTheme.typography.bodySmall,
+                color = TextMuted
+            )
+
+            // STT row
+            ModelProgressRow(
+                label = "Speech Recognition",
+                isDownloading = modelService.isSTTDownloading,
+                isLoading = modelService.isSTTLoading,
+                isLoaded = modelService.isSTTLoaded,
+                progress = modelService.sttDownloadProgress
+            )
+
+            // LLM row
+            ModelProgressRow(
+                label = "AI Structuring Model",
+                isDownloading = modelService.isLLMDownloading,
+                isLoading = modelService.isLLMLoading,
+                isLoaded = modelService.isLLMLoaded,
+                progress = modelService.llmDownloadProgress
+            )
+
+            // Error message
+            modelService.errorMessage?.let { err ->
+                Text(
+                    err,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color(0xFFFF6B6B)
+                )
+            }
+
+            Button(
+                onClick = onLoadClick,
+                enabled = !modelsLoading,
+                colors = ButtonDefaults.buttonColors(containerColor = AccentCyan),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                if (modelsLoading) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(18.dp),
+                        color = Color.White,
+                        strokeWidth = 2.dp
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text("Downloading…", color = Color.White)
+                } else {
+                    Text("Load AI Models", color = Color.White)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ModelProgressRow(
+    label: String,
+    isDownloading: Boolean,
+    isLoading: Boolean,
+    isLoaded: Boolean,
+    progress: Float
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text(label, style = MaterialTheme.typography.bodyMedium, color = TextPrimary)
+            Text(
+                text = when {
+                    isLoaded -> "✓ Ready"
+                    isLoading -> "Loading…"
+                    isDownloading -> "${(progress * 100).toInt()}%"
+                    else -> "Pending"
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = when {
+                    isLoaded -> AccentGreen
+                    isDownloading || isLoading -> AccentCyan
+                    else -> TextMuted
+                }
+            )
+        }
+        if (isDownloading) {
+            LinearProgressIndicator(
+                progress = { progress },
+                modifier = Modifier.fillMaxWidth().height(3.dp),
+                color = AccentCyan,
+                trackColor = SurfaceCard
+            )
+        } else if (isLoading) {
+            LinearProgressIndicator(
+                modifier = Modifier.fillMaxWidth().height(3.dp),
+                color = AccentViolet,
+                trackColor = SurfaceCard
+            )
         }
     }
 }
@@ -297,11 +422,7 @@ private fun ZeroNetworkBadge() {
         horizontalArrangement = Arrangement.Center,
         modifier = Modifier.padding(8.dp)
     ) {
-        Box(
-            modifier = Modifier
-                .size(8.dp)
-                .background(AccentGreen, CircleShape)
-        )
+        Box(modifier = Modifier.size(8.dp).background(AccentGreen, CircleShape))
         Spacer(Modifier.width(6.dp))
         Text(
             "Nothing leaves this device. Ever.",

@@ -17,15 +17,20 @@ import com.runanywhere.sdk.public.extensions.unloadSTTModel
 import com.runanywhere.sdk.public.extensions.isLLMModelLoaded
 import com.runanywhere.sdk.public.extensions.isSTTModelLoaded
 import com.runanywhere.sdk.public.extensions.availableModels
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.launch
 
 /**
- * Service for managing AI models - handles registration, downloading, and loading
- * Similar to the Flutter ModelService for consistent behavior across platforms
+ * Service for managing AI models - handles registration, downloading, and loading.
+ *
+ * FIX: Downloads are now sequential (STT first, then LLM) to prevent a race condition
+ * where concurrent downloads cause the SDK registry to assign the wrong file path to
+ * the LLM model entry, resulting in error -422 (invalid file format).
  */
 class ModelService : ViewModel() {
-    
+
     // LLM state
     var isLLMDownloading by mutableStateOf(false)
         private set
@@ -35,7 +40,7 @@ class ModelService : ViewModel() {
         private set
     var isLLMLoaded by mutableStateOf(false)
         private set
-    
+
     // STT state
     var isSTTDownloading by mutableStateOf(false)
         private set
@@ -45,21 +50,15 @@ class ModelService : ViewModel() {
         private set
     var isSTTLoaded by mutableStateOf(false)
         private set
-    
+
     var errorMessage by mutableStateOf<String?>(null)
         private set
-    
+
     companion object {
-        // Model IDs - using officially supported models
         const val LLM_MODEL_ID = "smollm2-360m-instruct-q8_0"
         const val STT_MODEL_ID = "sherpa-onnx-whisper-tiny.en"
-        
-        /**
-         * Register default models with the SDK.
-         * Includes LLM and STT only (for SaakshiAI incident documentation).
-         */
+
         fun registerDefaultModels() {
-            // LLM Model - Qwen 2.5 0.5B Instruct (better accuracy for structured extraction)
             RunAnywhere.registerModel(
                 id = LLM_MODEL_ID,
                 name = "SmolLM2 360M Instruct Q8_0",
@@ -68,8 +67,7 @@ class ModelService : ViewModel() {
                 modality = ModelCategory.LANGUAGE,
                 memoryRequirement = 400_000_000
             )
-            
-            // STT Model - Whisper Tiny English (fast transcription)
+
             RunAnywhere.registerModel(
                 id = STT_MODEL_ID,
                 name = "Sherpa Whisper Tiny (ONNX)",
@@ -79,115 +77,161 @@ class ModelService : ViewModel() {
             )
         }
     }
-    
+
     init {
         viewModelScope.launch {
             refreshModelState()
         }
     }
-    
-    /**
-     * Refresh model loaded states from SDK
-     */
+
     private suspend fun refreshModelState() {
         isLLMLoaded = RunAnywhere.isLLMModelLoaded()
         isSTTLoaded = RunAnywhere.isSTTModelLoaded()
     }
-    
-    /**
-     * Check if a model is downloaded
-     */
+
     private suspend fun isModelDownloaded(modelId: String): Boolean {
         val models = RunAnywhere.availableModels()
-        val model = models.find { it.id == modelId }
-        return model?.localPath != null
+        return models.find { it.id == modelId }?.localPath != null
     }
-    
+
     /**
-     * Download and load LLM model
+     * FIX: Download and load STT, then automatically start LLM download+load once
+     * STT is fully complete. Sequential execution prevents the SDK registry race
+     * condition that caused the LLM to load from the wrong file path.
      */
-    fun downloadAndLoadLLM() {
-        if (isLLMDownloading || isLLMLoading) return
-        
+    fun downloadAndLoadSTTThenLLM() {
+        if (isSTTDownloading || isSTTLoading) return
+
         viewModelScope.launch {
-            try {
-                errorMessage = null
-                
-                // Check if already downloaded
-                if (!isModelDownloaded(LLM_MODEL_ID)) {
-                    isLLMDownloading = true
-                    llmDownloadProgress = 0f
-                    
-                    RunAnywhere.downloadModel(LLM_MODEL_ID)
-                        .catch { e ->
-                            errorMessage = "LLM download failed: ${e.message}"
-                        }
-                        .collect { progress ->
-                            llmDownloadProgress = progress.progress
-                        }
-                    
-                    isLLMDownloading = false
-                }
-                
-                // Load the model
-                isLLMLoading = true
-                RunAnywhere.loadLLMModel(LLM_MODEL_ID)
-                isLLMLoaded = true
-                isLLMLoading = false
-                
-                refreshModelState()
-            } catch (e: Exception) {
-                errorMessage = "LLM load failed: ${e.message}"
-                isLLMDownloading = false
-                isLLMLoading = false
+            // Step 1: STT
+            val sttJob = downloadAndLoadSTTInternal()
+            sttJob.join()
+
+            // Only proceed to LLM if STT succeeded
+            if (isSTTLoaded && errorMessage == null) {
+                downloadAndLoadLLMInternal()
             }
         }
     }
-    
+
     /**
-     * Download and load STT model
+     * Download and load only the STT model (standalone, e.g. retry button).
      */
     fun downloadAndLoadSTT() {
         if (isSTTDownloading || isSTTLoading) return
-        
-        viewModelScope.launch {
-            try {
-                errorMessage = null
-                
-                // Check if already downloaded
-                if (!isModelDownloaded(STT_MODEL_ID)) {
-                    isSTTDownloading = true
-                    sttDownloadProgress = 0f
-                    
-                    RunAnywhere.downloadModel(STT_MODEL_ID)
-                        .catch { e ->
-                            errorMessage = "STT download failed: ${e.message}"
-                        }
-                        .collect { progress ->
-                            sttDownloadProgress = progress.progress
-                        }
-                    
-                    isSTTDownloading = false
-                }
-                
-                // Load the model
-                isSTTLoading = true
-                RunAnywhere.loadSTTModel(STT_MODEL_ID)
-                isSTTLoaded = true
-                isSTTLoading = false
-                
-                refreshModelState()
-            } catch (e: Exception) {
-                errorMessage = "STT load failed: ${e.message}"
+        viewModelScope.launch { downloadAndLoadSTTInternal() }
+    }
+
+    /**
+     * Download and load only the LLM model (standalone, e.g. retry button).
+     * Includes path verification to guard against stale registry entries.
+     */
+    fun downloadAndLoadLLM() {
+        if (isLLMDownloading || isLLMLoading) return
+        viewModelScope.launch { downloadAndLoadLLMInternal() }
+    }
+
+    // -------------------------------------------------------------------------
+    // Internal implementations (return Job so they can be .join()ed)
+    // -------------------------------------------------------------------------
+
+    private fun downloadAndLoadSTTInternal(): Job = viewModelScope.launch {
+        try {
+            errorMessage = null
+
+            if (!isModelDownloaded(STT_MODEL_ID)) {
+                isSTTDownloading = true
+                sttDownloadProgress = 0f
+
+                RunAnywhere.downloadModel(STT_MODEL_ID)
+                    .catch { e ->
+                        errorMessage = "STT download failed: ${e.message}"
+                        isSTTDownloading = false
+                    }
+                    .collect { progress ->
+                        sttDownloadProgress = progress.progress
+                    }
+
                 isSTTDownloading = false
-                isSTTLoading = false
             }
+
+            // FIX: Give the SDK registry time to commit the path before loading.
+            delay(300)
+
+            isSTTLoading = true
+            RunAnywhere.loadSTTModel(STT_MODEL_ID)
+            isSTTLoaded = true
+            isSTTLoading = false
+
+            refreshModelState()
+        } catch (e: Exception) {
+            errorMessage = "STT load failed: ${e.message}"
+            isSTTDownloading = false
+            isSTTLoading = false
         }
     }
-    
-    /**
-     * Unload all models
-     */
+
+    private fun downloadAndLoadLLMInternal(): Job = viewModelScope.launch {
+        try {
+            errorMessage = null
+
+            if (!isModelDownloaded(LLM_MODEL_ID)) {
+                isLLMDownloading = true
+                llmDownloadProgress = 0f
+
+                RunAnywhere.downloadModel(LLM_MODEL_ID)
+                    .catch { e ->
+                        errorMessage = "LLM download failed: ${e.message}"
+                        isLLMDownloading = false
+                    }
+                    .collect { progress ->
+                        llmDownloadProgress = progress.progress
+                    }
+
+                isLLMDownloading = false
+            }
+
+            // FIX: Give the SDK registry time to commit the path before loading.
+            delay(300)
+
+            // FIX: Verify the path in the registry actually points to a .gguf file,
+            // not the STT archive. This is the sentinel check for the race condition.
+            val models = RunAnywhere.availableModels()
+            val llmModel = models.find { it.id == LLM_MODEL_ID }
+            val localPath = llmModel?.localPath
+
+            if (localPath == null) {
+                errorMessage = "LLM model path not found after download. Please try again."
+                return@launch
+            }
+
+            if (!localPath.endsWith(".gguf") && !localPath.contains("llm")) {
+                // Path looks wrong — likely still pointing at the STT file.
+                // Wait a bit longer and re-check before giving up.
+                delay(1000)
+                val retryModels = RunAnywhere.availableModels()
+                val retryModel = retryModels.find { it.id == LLM_MODEL_ID }
+                if (retryModel?.localPath == null ||
+                    (!retryModel.localPath!!.endsWith(".gguf") &&
+                            !retryModel.localPath!!.contains("llm"))) {
+                    errorMessage = "LLM registry path looks incorrect: ${retryModel?.localPath}. Please restart and try again."
+                    return@launch
+                }
+            }
+
+            isLLMLoading = true
+            RunAnywhere.loadLLMModel(LLM_MODEL_ID)
+            isLLMLoaded = true
+            isLLMLoading = false
+
+            refreshModelState()
+        } catch (e: Exception) {
+            errorMessage = "LLM load failed: ${e.message}"
+            isLLMDownloading = false
+            isLLMLoading = false
+        }
+    }
+
     fun unloadAllModels() {
         viewModelScope.launch {
             try {
@@ -199,10 +243,7 @@ class ModelService : ViewModel() {
             }
         }
     }
-    
-    /**
-     * Clear error message
-     */
+
     fun clearError() {
         errorMessage = null
     }
