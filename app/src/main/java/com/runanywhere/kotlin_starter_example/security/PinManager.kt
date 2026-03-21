@@ -43,8 +43,9 @@ object PinManager {
         
         val prefs = getEncryptedPrefs(context)
         
-        // Generate a random salt for this PIN
-        val salt = generateRandomSalt()
+        // Check if salt already exists (e.g., during PIN change)
+        val existingSalt = prefs.getString(KEY_SALT, null)
+        val salt = existingSalt ?: generateRandomSalt()
         
         // Hash the PIN with the salt
         val pinHash = hashPin(pin, salt)
@@ -99,6 +100,32 @@ object PinManager {
         
         // Convert to hex string for SQLCipher
         return key.joinToString("") { "%02x".format(it) }
+    }
+    
+    /**
+     * Change existing PIN to a new one
+     * 
+     * IMPORTANT: This reuses the existing salt so the database encryption key remains unchanged.
+     * Only the PIN hash is updated, allowing the user to change their PIN without losing access
+     * to their encrypted database.
+     * 
+     * @param oldPin The current PIN for verification
+     * @param newPin The new 4-digit PIN to set
+     * @return true if change successful, false if old PIN is incorrect or new PIN is invalid
+     */
+    fun changePin(context: Context, oldPin: String, newPin: String): Boolean {
+        // Verify old PIN first
+        if (!verifyPin(context, oldPin)) {
+            return false
+        }
+        
+        // Validate new PIN
+        if (newPin.length != 4 || !newPin.all { it.isDigit() }) {
+            return false
+        }
+        
+        // Set up the new PIN (reuses existing salt for database compatibility)
+        return setupPin(context, newPin)
     }
     
     /**

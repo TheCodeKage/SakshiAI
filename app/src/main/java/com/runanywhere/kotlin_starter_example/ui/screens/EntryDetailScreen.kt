@@ -6,6 +6,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -17,6 +18,7 @@ import com.runanywhere.kotlin_starter_example.data.IncidentRecord
 import com.runanywhere.kotlin_starter_example.data.IncidentRepository
 import com.runanywhere.kotlin_starter_example.ui.theme.*
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -31,12 +33,48 @@ fun EntryDetailScreen(
 ) {
     val context = LocalContext.current
     val repository = remember { IncidentRepository(context, encryptionKey) }
+    val scope = rememberCoroutineScope()
     var record by remember { mutableStateOf<IncidentRecord?>(null) }
+    var showDeleteDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(incidentId) {
         record = withContext(Dispatchers.IO) {
             repository.getIncidentById(incidentId)
         }
+    }
+
+    // Delete confirmation dialog
+    if (showDeleteDialog) {
+        AlertDialog(
+            onDismissRequest = { showDeleteDialog = false },
+            title = { Text("Delete Record?", color = TextPrimary) },
+            text = {
+                Text(
+                    "This will permanently delete this record. This action cannot be undone.",
+                    color = TextMuted
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        scope.launch(Dispatchers.IO) {
+                            repository.deleteIncident(incidentId)
+                            withContext(Dispatchers.Main) {
+                                onNavigateBack()
+                            }
+                        }
+                    }
+                ) {
+                    Text("Delete", color = Color(0xFFFF453A))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteDialog = false }) {
+                    Text("Cancel", color = TextMuted)
+                }
+            },
+            containerColor = SurfaceCard
+        )
     }
 
     Scaffold(
@@ -46,6 +84,11 @@ fun EntryDetailScreen(
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
                         Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back")
+                    }
+                },
+                actions = {
+                    IconButton(onClick = { showDeleteDialog = true }) {
+                        Icon(Icons.Rounded.Delete, "Delete", tint = Color(0xFFFF453A))
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = PrimaryDark)

@@ -36,6 +36,13 @@ class IncidentRepository(context: Context, private val passphrase: String) :
         private const val COL_PATTERN_FLAG = "patternFlag"
         private const val COL_SEVERITY_TAG = "severityTag"
         private const val COL_RAW_JSON = "rawJson"
+        
+        /**
+         * Delete the database file (used when encryption key is wrong/corrupted)
+         */
+        fun deleteDatabase(context: Context): Boolean {
+            return context.deleteDatabase(DATABASE_NAME)
+        }
     }
 
     init {
@@ -94,46 +101,50 @@ class IncidentRepository(context: Context, private val passphrase: String) :
      * Retrieve all incident records, ordered by timestamp (newest first).
      */
     fun getAllIncidents(): List<IncidentRecord> {
-        val db = getReadableDatabase(passphrase)
-        
-        val cursor = db.query(
-            TABLE_NAME,
-            null, // all columns
-            null, // no WHERE clause
-            null, // no WHERE args
-            null, // no GROUP BY
-            null, // no HAVING
-            "$COL_TIMESTAMP DESC" // ORDER BY timestamp descending
-        )
-        
-        val results = mutableListOf<IncidentRecord>()
-        
-        with(cursor) {
-            while (moveToNext()) {
-                results.add(
-                    IncidentRecord(
-                        id = getString(getColumnIndexOrThrow(COL_ID)),
-                        timestamp = getLong(getColumnIndexOrThrow(COL_TIMESTAMP)),
-                        rawTranscript = getString(getColumnIndexOrThrow(COL_RAW_TRANSCRIPT)),
-                        incidentType = getString(getColumnIndexOrThrow(COL_INCIDENT_TYPE)),
-                        whoInvolved = getString(getColumnIndexOrThrow(COL_WHO_INVOLVED)),
-                        threatDocumented = getInt(getColumnIndexOrThrow(COL_THREAT_DOCUMENTED)) == 1,
-                        witnessesPresent = getString(getColumnIndexOrThrow(COL_WITNESSES_PRESENT)),
-                        patternFlag = getInt(getColumnIndexOrThrow(COL_PATTERN_FLAG)) == 1,
-                        severityTag = getString(getColumnIndexOrThrow(COL_SEVERITY_TAG)),
-                        rawJson = getString(getColumnIndexOrThrow(COL_RAW_JSON))
+        return try {
+            val db = getReadableDatabase(passphrase)
+            
+            val cursor = db.query(
+                TABLE_NAME,
+                null,
+                null,
+                null,
+                null,
+                null,
+                "$COL_TIMESTAMP DESC"
+            )
+            
+            val records = mutableListOf<IncidentRecord>()
+            
+            cursor.use {
+                while (it.moveToNext()) {
+                    val record = IncidentRecord(
+                        id = it.getString(it.getColumnIndexOrThrow(COL_ID)),
+                        timestamp = it.getLong(it.getColumnIndexOrThrow(COL_TIMESTAMP)),
+                        rawTranscript = it.getString(it.getColumnIndexOrThrow(COL_RAW_TRANSCRIPT)),
+                        incidentType = it.getString(it.getColumnIndexOrThrow(COL_INCIDENT_TYPE)),
+                        whoInvolved = it.getString(it.getColumnIndexOrThrow(COL_WHO_INVOLVED)),
+                        threatDocumented = it.getInt(it.getColumnIndexOrThrow(COL_THREAT_DOCUMENTED)) == 1,
+                        witnessesPresent = it.getString(it.getColumnIndexOrThrow(COL_WITNESSES_PRESENT)),
+                        patternFlag = it.getInt(it.getColumnIndexOrThrow(COL_PATTERN_FLAG)) == 1,
+                        severityTag = it.getString(it.getColumnIndexOrThrow(COL_SEVERITY_TAG)),
+                        rawJson = it.getString(it.getColumnIndexOrThrow(COL_RAW_JSON))
                     )
-                )
+                    records.add(record)
+                }
             }
-            close()
+            
+            db.close()
+            records
+        } catch (e: Exception) {
+            // If database can't be opened (wrong key, corruption, etc.), return empty list
+            // This prevents crash and allows the app to continue
+            emptyList()
         }
-        
-        db.close()
-        return results
     }
 
     /**
-     * Retrieve a single incident by ID.
+     * Retrieve a single incident record by ID.
      */
     fun getIncidentById(id: String): IncidentRecord? {
         val db = getReadableDatabase(passphrase)
@@ -150,22 +161,21 @@ class IncidentRepository(context: Context, private val passphrase: String) :
         
         var record: IncidentRecord? = null
         
-        with(cursor) {
-            if (moveToFirst()) {
+        cursor.use {
+            if (it.moveToFirst()) {
                 record = IncidentRecord(
-                    id = getString(getColumnIndexOrThrow(COL_ID)),
-                    timestamp = getLong(getColumnIndexOrThrow(COL_TIMESTAMP)),
-                    rawTranscript = getString(getColumnIndexOrThrow(COL_RAW_TRANSCRIPT)),
-                    incidentType = getString(getColumnIndexOrThrow(COL_INCIDENT_TYPE)),
-                    whoInvolved = getString(getColumnIndexOrThrow(COL_WHO_INVOLVED)),
-                    threatDocumented = getInt(getColumnIndexOrThrow(COL_THREAT_DOCUMENTED)) == 1,
-                    witnessesPresent = getString(getColumnIndexOrThrow(COL_WITNESSES_PRESENT)),
-                    patternFlag = getInt(getColumnIndexOrThrow(COL_PATTERN_FLAG)) == 1,
-                    severityTag = getString(getColumnIndexOrThrow(COL_SEVERITY_TAG)),
-                    rawJson = getString(getColumnIndexOrThrow(COL_RAW_JSON))
+                    id = it.getString(it.getColumnIndexOrThrow(COL_ID)),
+                    timestamp = it.getLong(it.getColumnIndexOrThrow(COL_TIMESTAMP)),
+                    rawTranscript = it.getString(it.getColumnIndexOrThrow(COL_RAW_TRANSCRIPT)),
+                    incidentType = it.getString(it.getColumnIndexOrThrow(COL_INCIDENT_TYPE)),
+                    whoInvolved = it.getString(it.getColumnIndexOrThrow(COL_WHO_INVOLVED)),
+                    threatDocumented = it.getInt(it.getColumnIndexOrThrow(COL_THREAT_DOCUMENTED)) == 1,
+                    witnessesPresent = it.getString(it.getColumnIndexOrThrow(COL_WITNESSES_PRESENT)),
+                    patternFlag = it.getInt(it.getColumnIndexOrThrow(COL_PATTERN_FLAG)) == 1,
+                    severityTag = it.getString(it.getColumnIndexOrThrow(COL_SEVERITY_TAG)),
+                    rawJson = it.getString(it.getColumnIndexOrThrow(COL_RAW_JSON))
                 )
             }
-            close()
         }
         
         db.close()

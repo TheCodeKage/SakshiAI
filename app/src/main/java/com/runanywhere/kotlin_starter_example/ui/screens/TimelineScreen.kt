@@ -8,6 +8,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.FileDownload
+import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -33,7 +34,8 @@ import java.util.Locale
 fun TimelineScreen(
     encryptionKey: String,
     onNavigateToRecord: () -> Unit,
-    onNavigateToDetail: (String) -> Unit
+    onNavigateToDetail: (String) -> Unit,
+    onNavigateToSettings: () -> Unit
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -42,10 +44,17 @@ fun TimelineScreen(
     var incidents by remember { mutableStateOf(listOf<IncidentRecord>()) }
     var isExporting by remember { mutableStateOf(false) }
     var showExportWarning by remember { mutableStateOf(false) }
+    var dbError by remember { mutableStateOf<String?>(null) }
 
     // Load incidents every time screen is shown
     LaunchedEffect(Unit) {
-        incidents = withContext(Dispatchers.IO) { repository.getAllIncidents() }
+        try {
+            incidents = withContext(Dispatchers.IO) { repository.getAllIncidents() }
+        } catch (e: Exception) {
+            // Database error (wrong key, corrupted, etc.)
+            dbError = e.message
+            incidents = emptyList()
+        }
     }
 
     // PDF Export Warning Dialog
@@ -109,6 +118,9 @@ fun TimelineScreen(
             TopAppBar(
                 title = { Text("SafeNotes") },
                 actions = {
+                    IconButton(onClick = onNavigateToSettings) {
+                        Icon(Icons.Rounded.Settings, "Settings", tint = AccentCyan)
+                    }
                     if (incidents.isNotEmpty()) {
                         IconButton(onClick = { showExportWarning = true }) {
                             if (isExporting) {

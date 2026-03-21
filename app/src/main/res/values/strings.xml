@@ -1,3 +1,77 @@
 <resources>
     <string name="app_name">SafeNotes</string>
+    
+    <!-- Entry/PIN Setup -->
+    <string name="setup_pin_title">Setup Your PIN</string>
+    <string name="setup_pin_description">Create a 4-digit PIN to secure your data.\nThis calculator will hide your private records.</string>
+    <string name="enter_pin">Enter PIN</string>
+    <string name="confirm_pin">Confirm PIN</string>
+    <string name="set_pin">Set PIN</string>
+    <string name="pin_error_length">PIN must be 4 digits</string>
+    <string name="pin_error_mismatch">PINs do not match</string>
+    <string name="pin_error_setup">Failed to setup PIN</string>
+    
+    <!-- Settings -->
+    <string name="settings">Settings</string>
+    <string name="change_pin">Change PIN</string>
+    <string name="change_pin_description">Enter your current PIN and choose a new 4-digit PIN</string>
+    <string name="current_pin">Current PIN</string>
+    <string name="new_pin">New PIN</string>
+    <string name="confirm_new_pin">Confirm New PIN</string>
+    <string name="pin_changed_success">PIN changed successfully!</string>
+    <string name="pin_error_incorrect">Current PIN is incorrect</string>
+    <string name="pin_error_same">New PIN must be different from current PIN</string>
+    <string name="pin_warning_title">⚠️ Important</string>
+    <string name="pin_warning_message">If you forget your PIN, there is no way to recover your data. Make sure to remember your new PIN.</string>
+    
+    <!-- Timeline -->
+    <string name="no_records">No records yet</string>
+    <string name="no_records_description">Tap + to add your first record.\nEverything stays on this device.</string>
+    <string name="export_warning_title">Export Warning</string>
+    <string name="export_warning_message">This PDF contains sensitive information. Ensure you:\n\n• Store it in a secure location\n• Delete it after sharing with your legal advisor\n• Never leave it on an unencrypted device\n\nContinue with export?</string>
+    <string name="export">Export</string>
+    <string name="cancel">Cancel</string>
+    <string name="export_pdf">Export PDF</string>
+    <string name="new_record">New record</string>
+    
+    <!-- Detail Screen -->
+    <string name="entry_detail">Entry Detail</string>
+    <string name="delete">Delete</string>
+    <string name="delete_record_title">Delete Record?</string>
+    <string name="delete_record_message">This will permanently delete this record. This action cannot be undone.</string>
+    <string name="back">Back</string>
+    
+    <!-- Record Details -->
+    <string name="incident_type">Incident type</string>
+    <string name="person_involved">Person involved</string>
+    <string name="threat_documented">Threat documented</string>
+    <string name="witnesses_present">Witnesses present</string>
+    <string name="pattern_detected">Pattern detected</string>
+    <string name="your_account">Your account</string>
+    <string name="not_specified">Not specified</string>
+    <string name="none_mentioned">None mentioned</string>
+    <string name="yes">Yes</string>
+    <string name="no">No</string>
+    <string name="pattern_yes">Yes — repeat language found</string>
+    
+    <!-- Severity Tags -->
+    <string name="severity_immediate">Immediate Risk</string>
+    <string name="severity_concerning">Concerning Pattern</string>
+    <string name="severity_documentation">Documentation Only</string>
+    
+    <!-- Crisis Warning -->
+    <string name="crisis_warning">If you are in immediate danger, please call 112.</string>
+    
+    <!-- Record Screen -->
+    <string name="record">Record</string>
+    <string name="model_setup">Model Setup</string>
+    <string name="model_setup_required">AI models must be downloaded and loaded before recording.</string>
+    <string name="download_and_load">Download and Load Models</string>
+    <string name="downloading">Downloading…</string>
+    <string name="loading">Loading…</string>
+    <string name="tap_to_record">Tap to record</string>
+    <string name="recording">Recording...</string>
+    <string name="processing">Processing…</string>
+    <string name="saved">Saved</string>
+    <string name="record_error">Recording error</string>
 </resources>

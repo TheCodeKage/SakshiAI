@@ -18,6 +18,7 @@ import com.runanywhere.kotlin_starter_example.ui.screens.EntryScreen
 import com.runanywhere.kotlin_starter_example.ui.screens.TimelineScreen
 import com.runanywhere.kotlin_starter_example.ui.screens.RecordScreen
 import com.runanywhere.kotlin_starter_example.ui.screens.EntryDetailScreen
+import com.runanywhere.kotlin_starter_example.ui.screens.SettingsScreen
 import com.runanywhere.kotlin_starter_example.ui.theme.KotlinStarterTheme
 import android.util.Log
 import com.runanywhere.sdk.core.onnx.ONNX
@@ -89,9 +90,16 @@ fun RunAnywhereApp() {
                 TimelineScreen(
                     encryptionKey = key,
                     onNavigateToRecord = { navController.navigate("record") },
-                    onNavigateToDetail = { id -> navController.navigate("detail/$id") }
+                    onNavigateToDetail = { id -> navController.navigate("detail/$id") },
+                    onNavigateToSettings = { navController.navigate("settings") }
                 )
             }
+        }
+
+        composable("settings") {
+            SettingsScreen(
+                onNavigateBack = { navController.popBackStack() }
+            )
         }
 
         composable("record") {
