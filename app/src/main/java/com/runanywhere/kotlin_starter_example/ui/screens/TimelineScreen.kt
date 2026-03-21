@@ -21,6 +21,7 @@ import androidx.core.content.FileProvider
 import com.runanywhere.kotlin_starter_example.data.IncidentRecord
 import com.runanywhere.kotlin_starter_example.data.IncidentRepository
 import com.runanywhere.kotlin_starter_example.data.PdfExporter
+import com.runanywhere.kotlin_starter_example.services.ModelService
 import com.runanywhere.kotlin_starter_example.ui.theme.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -34,6 +35,7 @@ import java.util.Locale
 fun TimelineScreen(
     encryptionKey: String,
     refreshTrigger: Int,
+    modelService: ModelService,
     onNavigateToRecord: () -> Unit,
     onNavigateToDetail: (String) -> Unit,
     onNavigateToSettings: () -> Unit
@@ -55,6 +57,17 @@ fun TimelineScreen(
             // Database error (wrong key, corrupted, etc.)
             dbError = e.message
             incidents = emptyList()
+        }
+    }
+
+    // When background processing completes, reload the list automatically
+    LaunchedEffect(modelService.processingState) {
+        if (modelService.processingState is ModelService.ProcessingState.Done) {
+            try {
+                incidents = withContext(Dispatchers.IO) { repository.getAllIncidents() }
+            } catch (e: Exception) {
+                dbError = e.message
+            }
         }
     }
 
@@ -150,7 +163,7 @@ fun TimelineScreen(
         },
         containerColor = PrimaryDark
     ) { padding ->
-        if (incidents.isEmpty()) {
+        if (incidents.isEmpty() && modelService.processingState !is ModelService.ProcessingState.Processing) {
             Box(
                 modifier = Modifier.fillMaxSize().padding(padding),
                 contentAlignment = Alignment.Center
@@ -175,6 +188,36 @@ fun TimelineScreen(
                 verticalArrangement = Arrangement.spacedBy(12.dp),
                 contentPadding = PaddingValues(vertical = 16.dp)
             ) {
+                // Background processing banner — shown when AI is working after user navigated back
+                if (modelService.processingState is ModelService.ProcessingState.Processing) {
+                    item {
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = CardDefaults.cardColors(containerColor = Color(0xFF2A1F00))
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(14.dp),
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(14.dp),
+                                    color = Color(0xFFFFBF47),
+                                    strokeWidth = 2.dp
+                                )
+                                Text(
+                                    "Securing your record…",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = Color(0xFFFFBF47)
+                                )
+                            }
+                        }
+                    }
+                }
+
                 // Pattern warning banner if any entries have patternFlag
                 if (incidents.any { it.patternFlag }) {
                     item {

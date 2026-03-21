@@ -92,6 +92,7 @@ fun RunAnywhereApp() {
                 TimelineScreen(
                     encryptionKey = key,
                     refreshTrigger = timelineRefreshKey,
+                    modelService = modelService,
                     onNavigateToRecord = { navController.navigate("record") },
                     onNavigateToDetail = { id -> navController.navigate("detail/$id") },
                     onNavigateToSettings = { navController.navigate("settings") }
