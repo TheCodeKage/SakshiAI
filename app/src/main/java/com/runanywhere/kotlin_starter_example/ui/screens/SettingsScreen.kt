@@ -23,7 +23,7 @@ fun SettingsScreen(
     onNavigateBack: () -> Unit
 ) {
     val context = LocalContext.current
-    
+
     var currentPin by remember { mutableStateOf("") }
     var newPin by remember { mutableStateOf("") }
     var confirmNewPin by remember { mutableStateOf("") }
@@ -67,7 +67,7 @@ fun SettingsScreen(
 
             OutlinedTextField(
                 value = currentPin,
-                onValueChange = { 
+                onValueChange = {
                     if (it.length <= 4 && it.all { c -> c.isDigit() }) {
                         currentPin = it
                         statusMessage = null
@@ -88,7 +88,7 @@ fun SettingsScreen(
 
             OutlinedTextField(
                 value = newPin,
-                onValueChange = { 
+                onValueChange = {
                     if (it.length <= 4 && it.all { c -> c.isDigit() }) {
                         newPin = it
                         statusMessage = null
@@ -109,7 +109,7 @@ fun SettingsScreen(
 
             OutlinedTextField(
                 value = confirmNewPin,
-                onValueChange = { 
+                onValueChange = {
                     if (it.length <= 4 && it.all { c -> c.isDigit() }) {
                         confirmNewPin = it
                         statusMessage = null
