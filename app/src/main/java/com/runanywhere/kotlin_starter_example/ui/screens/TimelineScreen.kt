@@ -42,10 +42,12 @@ fun TimelineScreen(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val repository = remember { IncidentRepository(context, encryptionKey) }
+    // Use Singleton to avoid DB lock/lag issues
+    val repository = remember { IncidentRepository.getInstance(context, encryptionKey) }
 
     var incidents by remember { mutableStateOf(listOf<IncidentRecord>()) }
     var isExporting by remember { mutableStateOf(false) }
+    var exportPassword by remember { mutableStateOf("") }
     var showExportWarning by remember { mutableStateOf(false) }
     var dbError by remember { mutableStateOf<String?>(null) }
 
@@ -53,48 +55,64 @@ fun TimelineScreen(
     LaunchedEffect(refreshTrigger) {
         try {
             incidents = withContext(Dispatchers.IO) { repository.getAllIncidents() }
+            if (incidents.isEmpty()) {
+                dbError = null // Clear error if successful but empty
+            }
         } catch (e: Exception) {
             // Database error (wrong key, corrupted, etc.)
-            dbError = e.message
+            dbError = "DB Error: ${e.message}"
             incidents = emptyList()
         }
     }
 
-    // When background processing completes, reload the list automatically
-    LaunchedEffect(modelService.processingState) {
-        if (modelService.processingState is ModelService.ProcessingState.Done) {
-            try {
-                incidents = withContext(Dispatchers.IO) { repository.getAllIncidents() }
-            } catch (e: Exception) {
-                dbError = e.message
-            }
-        }
-    }
-
-    // PDF Export Warning Dialog
+    // PDF Export Warning Dialog with Password Input
     if (showExportWarning) {
         AlertDialog(
-            onDismissRequest = { showExportWarning = false },
-            title = { Text("Export Warning", color = TextPrimary) },
+            onDismissRequest = { 
+                showExportWarning = false 
+                exportPassword = ""
+            },
+            title = { Text("Secure Export", color = TextPrimary) },
             text = {
-                Text(
-                    "This PDF contains sensitive information. Ensure you:\n\n" +
-                            "• Store it in a secure location\n" +
-                            "• Delete it after sharing with your legal advisor\n" +
-                            "• Never leave it on an unencrypted device\n\n" +
-                            "Continue with export?",
-                    color = TextMuted
-                )
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(
+                        "Generate a password-protected PDF report for legal use.",
+                        color = TextMuted
+                    )
+                    OutlinedTextField(
+                        value = exportPassword,
+                        onValueChange = { exportPassword = it },
+                        label = { Text("PDF Password (Optional)") },
+                        placeholder = { Text("Leave blank for no password") },
+                        singleLine = true,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = AccentCyan,
+                            unfocusedBorderColor = TextMuted,
+                            focusedTextColor = TextPrimary,
+                            unfocusedTextColor = TextPrimary
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Text(
+                        "• File will be saved to your device\n" +
+                        "• Delete after sharing safely\n" +
+                        "• Keep password separate from file",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = TextMuted
+                    )
+                }
             },
             confirmButton = {
                 TextButton(
                     onClick = {
                         showExportWarning = false
                         isExporting = true
+                        val pwd = exportPassword
+                        exportPassword = "" // Clear immediately
                         scope.launch {
                             try {
                                 val file = withContext(Dispatchers.IO) {
-                                    PdfExporter.export(context, incidents)
+                                    PdfExporter.export(context, incidents, pwd.ifBlank { null })
                                 }
                                 // Open the PDF
                                 val uri = FileProvider.getUriForFile(
@@ -107,19 +125,23 @@ fun TimelineScreen(
                                     addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                                 }
                                 context.startActivity(intent)
-                            } catch (e: Exception) {
-                                // Handle error silently — file still saved
+                            } catch (e: Throwable) {
+                                e.printStackTrace()
+                                dbError = "Export failed: ${e.message ?: e::class.java.simpleName}"
                             } finally {
                                 isExporting = false
                             }
                         }
                     }
                 ) {
-                    Text("Export", color = AccentCyan)
+                    Text("Generate Report", color = AccentCyan)
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showExportWarning = false }) {
+                TextButton(onClick = { 
+                    showExportWarning = false
+                    exportPassword = ""
+                }) {
                     Text("Cancel", color = TextMuted)
                 }
             },
@@ -284,6 +306,12 @@ private fun IncidentCard(record: IncidentRecord, onClick: () -> Unit) {
                     record.rawTranscript.take(100) + if (record.rawTranscript.length > 100) "…" else "",
                     style = MaterialTheme.typography.bodySmall,
                     color = TextMuted
+                )
+            } else if (record.audioFilePath != null) {
+                Text(
+                    "Audio Record (No Transcript)",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = AccentCyan
                 )
             }
 

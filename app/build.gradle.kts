@@ -53,6 +53,11 @@ android {
 }
 
 dependencies {
+    // RunAnywhere SDK
+    implementation(libs.runanywhere.sdk)
+    implementation(libs.runanywhere.llamacpp)
+    implementation(libs.runanywhere.onnx)
+    
     // AndroidX Core
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.appcompat)
@@ -75,15 +80,13 @@ dependencies {
     implementation(libs.kotlinx.coroutines.android)
     implementation("org.apache.commons:commons-compress:1.27.1")
     
+    // PDF Generation
+    implementation("com.itextpdf:itextg:5.5.10")
+
     // Security & Database Encryption
+    implementation("androidx.security:security-crypto:1.0.0")
     implementation("net.zetetic:android-database-sqlcipher:4.5.4")
     implementation("androidx.sqlite:sqlite:2.4.0")
-    implementation("androidx.security:security-crypto:1.1.0-alpha06")
-    
-    // RunAnywhere SDK
-    implementation(libs.runanywhere.sdk)
-    implementation(libs.runanywhere.llamacpp)
-    implementation(libs.runanywhere.onnx)
     
     // Testing
     testImplementation(libs.junit)

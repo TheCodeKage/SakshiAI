@@ -285,25 +285,29 @@ class ModelService : ViewModel() {
         viewModelScope.launch {
             processingState = ProcessingState.Processing
             try {
+                // Get repository instance (Singleton)
+                val repository = IncidentRepository.getInstance(context, encryptionKey)
+
                 // Ensure STT is loaded for transcription
+                // Note: IncidentProcessor.process uses RunAnywhere.transcribe internally,
+                // which relies on the model being loaded.
                 if (!RunAnywhere.isSTTModelLoaded()) {
                     RunAnywhere.loadSTTModel(STT_MODEL_ID)
+                    isSTTLoaded = true
                 }
 
-                val record = IncidentProcessor.process(audioBytes)
+                // Process (Encryption + STT + LLM + History Check + Sealing)
+                // We pass context for encryption and repository for history check
+                val record = IncidentProcessor.process(context, audioBytes, repository)
 
-                // RAM MANAGEMENT: Unload STT to make room for Llama 3B
-                RunAnywhere.unloadSTTModel()
-                isSTTLoaded = false
-
-                // Load LLM if needed for post-processing/summarization
-                if (!RunAnywhere.isLLMModelLoaded()) {
-                    RunAnywhere.loadLLMModel(LLM_MODEL_ID)
-                    isLLMLoaded = true
-                }
-
+                // RAM MANAGEMENT: Unload STT to make room for generic system usage if needed
+                // But since we are done, we might keep it or unload it. 
+                // The original code unloaded it. Let's keep that behavior if memory is tight.
+                // For now, let's keep models loaded for responsiveness unless user explicitly unloads.
+                
+                // Save complete record to DB
                 withContext(Dispatchers.IO) {
-                    IncidentRepository(context, encryptionKey).saveIncident(record)
+                    repository.saveIncident(record)
                 }
 
                 processingState = ProcessingState.Done(record)

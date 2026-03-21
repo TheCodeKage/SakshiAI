@@ -63,7 +63,7 @@ fun EntryScreen(onPinCorrect: (String) -> Unit) {
             
             // Verify the database can be opened with this key before navigating
             try {
-                val testRepo = com.runanywhere.kotlin_starter_example.data.IncidentRepository(context, key)
+                val testRepo = com.runanywhere.kotlin_starter_example.data.IncidentRepository.getInstance(context, key)
                 testRepo.getIncidentCount() // Try to access database
             } catch (e: Exception) {
                 // Database exists but can't be opened with this key - it's corrupted
