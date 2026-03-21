@@ -33,6 +33,7 @@ import java.util.Locale
 @Composable
 fun TimelineScreen(
     encryptionKey: String,
+    refreshTrigger: Int,
     onNavigateToRecord: () -> Unit,
     onNavigateToDetail: (String) -> Unit,
     onNavigateToSettings: () -> Unit
@@ -46,8 +47,8 @@ fun TimelineScreen(
     var showExportWarning by remember { mutableStateOf(false) }
     var dbError by remember { mutableStateOf<String?>(null) }
 
-    // Load incidents every time screen is shown
-    LaunchedEffect(Unit) {
+    // Use refreshTrigger as the key so this reruns every time we return from RecordScreen
+    LaunchedEffect(refreshTrigger) {
         try {
             incidents = withContext(Dispatchers.IO) { repository.getAllIncidents() }
         } catch (e: Exception) {

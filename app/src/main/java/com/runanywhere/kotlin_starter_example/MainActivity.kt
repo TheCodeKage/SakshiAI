@@ -70,10 +70,12 @@ class MainActivity : ComponentActivity() {
 fun RunAnywhereApp() {
     val navController = rememberNavController()
     val modelService: ModelService = viewModel()
-    
-    // Store encryption key in memory after successful PIN entry
     var encryptionKey by remember { mutableStateOf<String?>(null) }
     
+    // This counter increments every time we return from RecordScreen
+    // TimelineScreen watches it and reloads the list when it changes
+    var timelineRefreshKey by remember { mutableStateOf(0) }
+
     NavHost(navController = navController, startDestination = "entry") {
 
         composable("entry") {
@@ -89,6 +91,7 @@ fun RunAnywhereApp() {
             encryptionKey?.let { key ->
                 TimelineScreen(
                     encryptionKey = key,
+                    refreshTrigger = timelineRefreshKey,
                     onNavigateToRecord = { navController.navigate("record") },
                     onNavigateToDetail = { id -> navController.navigate("detail/$id") },
                     onNavigateToSettings = { navController.navigate("settings") }
@@ -97,16 +100,19 @@ fun RunAnywhereApp() {
         }
 
         composable("settings") {
-            SettingsScreen(
-                onNavigateBack = { navController.popBackStack() }
-            )
+            SettingsScreen(onNavigateBack = { navController.popBackStack() })
         }
 
         composable("record") {
             encryptionKey?.let { key ->
                 RecordScreen(
                     encryptionKey = key,
-                    onNavigateBack = { navController.popBackStack() },
+                    onNavigateBack = {
+                        // Increment the key BEFORE navigating back
+                        // This tells TimelineScreen to reload its data
+                        timelineRefreshKey++
+                        navController.popBackStack()
+                    },
                     modelService = modelService
                 )
             }

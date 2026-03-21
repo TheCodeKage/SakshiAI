@@ -14,6 +14,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.runanywhere.kotlin_starter_example.data.IncidentRecord
 import com.runanywhere.kotlin_starter_example.data.IncidentRepository
 import com.runanywhere.kotlin_starter_example.ui.theme.*
@@ -136,6 +137,8 @@ fun EntryDetailScreen(
                     }
                 }
 
+                LegalContextCard(r)
+
                 if (r.severityTag == "Immediate Risk") {
                     Card(
                         modifier = Modifier.fillMaxWidth(),
@@ -195,5 +198,80 @@ private fun SeverityChipDetail(severity: String) {
             style = MaterialTheme.typography.labelMedium,
             color = fg
         )
+    }
+}
+
+fun buildLegalContext(record: IncidentRecord): String? {
+    val points = mutableListOf<String>()
+
+    if (record.threatDocumented) {
+        points.add("A documented verbal or physical threat can support an application for a Protection Order under the Protection of Women from Domestic Violence Act, 2005 (PWDVA).")
+    }
+
+    if (record.patternFlag) {
+        points.add("Multiple timestamped records showing a pattern of behaviour strengthen a case significantly — courts look for evidence of repeated conduct, not just isolated incidents.")
+    }
+
+    if (record.witnessesPresent.isNotBlank()) {
+        points.add("The presence of witnesses, noted here, can be referenced when filing a Domestic Incident Report (DIR) with a Protection Officer.")
+    }
+
+    if (record.severityTag == "Immediate Risk") {
+        points.add("Records documenting immediate physical risk can be used to request emergency relief, including the right to reside in the shared household or exclusion of the respondent.")
+    }
+
+    if (record.whoInvolved.isNotBlank()) {
+        points.add("The named person can be identified as a respondent in legal proceedings.")
+    }
+
+    if (points.isEmpty()) return null
+
+    return points.joinToString("\n\n")
+}
+
+@Composable
+private fun LegalContextCard(record: IncidentRecord) {
+    val context = buildLegalContext(record) ?: return
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFF0D1F2D))
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("⚖️", style = MaterialTheme.typography.bodyMedium)
+                Text(
+                    "What this record could mean",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = Color(0xFF60B4D8)
+                )
+            }
+
+            Text(
+                text = context,
+                style = MaterialTheme.typography.bodySmall,
+                color = Color(0xFFB0CDD8),
+                lineHeight = 18.sp
+            )
+
+            HorizontalDivider(
+                color = Color(0xFF1E3A4A),
+                thickness = 1.dp
+            )
+
+            Text(
+                text = "This is not legal advice. For guidance specific to your situation, speak with a lawyer or contact iCall (9152987821) or the National Commission for Women (7827170170).",
+                style = MaterialTheme.typography.labelSmall,
+                color = Color(0xFF607D8B),
+                lineHeight = 15.sp
+            )
+        }
     }
 }
