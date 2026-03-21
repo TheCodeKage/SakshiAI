@@ -98,10 +98,21 @@ fun RecordScreen(
     var statusMessage by remember { mutableStateOf("Tap the button and speak") }
     var showCrisisNote by remember { mutableStateOf(false) }
 
-    LaunchedEffect(Unit) {
-        hasPermission = ContextCompat.checkSelfPermission(
-            context, Manifest.permission.RECORD_AUDIO
-        ) == PackageManager.PERMISSION_GRANTED
+    LaunchedEffect(modelService.processingState) {
+        when (val state = modelService.processingState) {
+            is ModelService.ProcessingState.Done -> {
+                if (state.record.severityTag == "Immediate Risk") showCrisisNote = true
+                recordState = RecordState.DONE
+                statusMessage = "Saved. Your record is secure."
+                modelService.resetProcessingState()
+            }
+            is ModelService.ProcessingState.Error -> {
+                recordState = RecordState.ERROR
+                statusMessage = "Something went wrong. Please try again."
+                modelService.resetProcessingState()
+            }
+            else -> {}
+        }
     }
 
     val permissionLauncher = rememberLauncherForActivityResult(
@@ -209,21 +220,10 @@ fun RecordScreen(
                                     recordState = RecordState.PROCESSING
                                     statusMessage = "Processing your account…"
                                     scope.launch {
-                                        try {
-                                            val audioData = withContext(Dispatchers.IO) {
-                                                audioRecorder.stopRecording()
-                                            }
-                                            val record = IncidentProcessor.process(audioData)
-                                            repository.saveIncident(record)
-                                            if (record.severityTag == "Immediate Risk") {
-                                                showCrisisNote = true
-                                            }
-                                            recordState = RecordState.DONE
-                                            statusMessage = "Saved. Your record is secure."
-                                        } catch (e: Exception) {
-                                            recordState = RecordState.ERROR
-                                            statusMessage = "Something went wrong. Please try again."
+                                        val audioData = withContext(Dispatchers.IO) {
+                                            audioRecorder.stopRecording()
                                         }
+                                        modelService.processAudio(audioData, encryptionKey, context)
                                     }
                                 }
                                 RecordState.PROCESSING -> { /* wait */ }

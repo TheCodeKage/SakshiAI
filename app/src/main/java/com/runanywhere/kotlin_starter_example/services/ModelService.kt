@@ -1,10 +1,14 @@
 package com.runanywhere.kotlin_starter_example.services
 
+import android.content.Context
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.runanywhere.kotlin_starter_example.data.IncidentProcessor
+import com.runanywhere.kotlin_starter_example.data.IncidentRecord
+import com.runanywhere.kotlin_starter_example.data.IncidentRepository
 import com.runanywhere.sdk.core.types.InferenceFramework
 import com.runanywhere.sdk.public.RunAnywhere
 import com.runanywhere.sdk.public.extensions.Models.ModelCategory
@@ -17,10 +21,12 @@ import com.runanywhere.sdk.public.extensions.unloadSTTModel
 import com.runanywhere.sdk.public.extensions.isLLMModelLoaded
 import com.runanywhere.sdk.public.extensions.isSTTModelLoaded
 import com.runanywhere.sdk.public.extensions.availableModels
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.apache.commons.compress.archivers.tar.TarArchiveInputStream
 import org.apache.commons.compress.compressors.gzip.GzipCompressorInputStream
 import org.apache.commons.compress.compressors.bzip2.BZip2CompressorInputStream
@@ -443,6 +449,37 @@ class ModelService : ViewModel() {
             isLLMDownloading = false
             isLLMLoading = false
         }
+    }
+
+    var processingState by mutableStateOf<ProcessingState>(ProcessingState.Idle)
+        private set
+
+    sealed class ProcessingState {
+        object Idle : ProcessingState()
+        object Processing : ProcessingState()
+        data class Done(val record: IncidentRecord) : ProcessingState()
+        data class Error(val message: String) : ProcessingState()
+    }
+
+    fun processAudio(audioBytes: ByteArray, encryptionKey: String, context: Context) {
+        if (processingState is ProcessingState.Processing) return
+
+        viewModelScope.launch {
+            processingState = ProcessingState.Processing
+            try {
+                val record = IncidentProcessor.process(audioBytes)
+                withContext(Dispatchers.IO) {
+                    IncidentRepository(context, encryptionKey).saveIncident(record)
+                }
+                processingState = ProcessingState.Done(record)
+            } catch (e: Exception) {
+                processingState = ProcessingState.Error(e.message ?: "Unknown error")
+            }
+        }
+    }
+
+    fun resetProcessingState() {
+        processingState = ProcessingState.Idle
     }
 
     fun unloadAllModels() {
