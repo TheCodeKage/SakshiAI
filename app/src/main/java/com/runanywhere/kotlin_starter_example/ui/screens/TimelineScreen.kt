@@ -42,25 +42,26 @@ fun TimelineScreen(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val repository = remember { IncidentRepository(context, encryptionKey) }
+
+    // Repository initialized with the key provided by MainActivity
+    val repository = remember(encryptionKey) { IncidentRepository(context, encryptionKey) }
 
     var incidents by remember { mutableStateOf(listOf<IncidentRecord>()) }
     var isExporting by remember { mutableStateOf(false) }
     var showExportWarning by remember { mutableStateOf(false) }
     var dbError by remember { mutableStateOf<String?>(null) }
 
-    // Use refreshTrigger as the key so this reruns every time we return from RecordScreen
-    LaunchedEffect(refreshTrigger) {
+    // Reruns every time we return from RecordScreen or the key changes
+    LaunchedEffect(refreshTrigger, encryptionKey) {
         try {
             incidents = withContext(Dispatchers.IO) { repository.getAllIncidents() }
         } catch (e: Exception) {
-            // Database error (wrong key, corrupted, etc.)
             dbError = e.message
             incidents = emptyList()
         }
     }
 
-    // When background processing completes, reload the list automatically
+    // Reload list when AI background processing finishes
     LaunchedEffect(modelService.processingState) {
         if (modelService.processingState is ModelService.ProcessingState.Done) {
             try {
@@ -71,7 +72,7 @@ fun TimelineScreen(
         }
     }
 
-    // PDF Export Warning Dialog
+    // PDF Export Logic
     if (showExportWarning) {
         AlertDialog(
             onDismissRequest = { showExportWarning = false },
@@ -96,7 +97,6 @@ fun TimelineScreen(
                                 val file = withContext(Dispatchers.IO) {
                                     PdfExporter.export(context, incidents)
                                 }
-                                // Open the PDF
                                 val uri = FileProvider.getUriForFile(
                                     context,
                                     "${context.packageName}.provider",
@@ -108,7 +108,7 @@ fun TimelineScreen(
                                 }
                                 context.startActivity(intent)
                             } catch (e: Exception) {
-                                // Handle error silently — file still saved
+                                // Silent fail
                             } finally {
                                 isExporting = false
                             }
@@ -130,7 +130,7 @@ fun TimelineScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("SafeNotes") },
+                title = { Text("Sakshi") }, // Updated title per your context
                 actions = {
                     IconButton(onClick = onNavigateToSettings) {
                         Icon(Icons.Rounded.Settings, "Settings", tint = AccentCyan)
@@ -188,7 +188,7 @@ fun TimelineScreen(
                 verticalArrangement = Arrangement.spacedBy(12.dp),
                 contentPadding = PaddingValues(vertical = 16.dp)
             ) {
-                // Background processing banner — shown when AI is working after user navigated back
+                // Background processing banner
                 if (modelService.processingState is ModelService.ProcessingState.Processing) {
                     item {
                         Card(
@@ -218,7 +218,7 @@ fun TimelineScreen(
                     }
                 }
 
-                // Pattern warning banner if any entries have patternFlag
+                // Pattern warning banner
                 if (incidents.any { it.patternFlag }) {
                     item {
                         Card(

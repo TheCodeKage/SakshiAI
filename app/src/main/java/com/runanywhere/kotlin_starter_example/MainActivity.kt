@@ -1,26 +1,26 @@
 package com.runanywhere.kotlin_starter_example
 
+import android.content.Context
+import android.hardware.Sensor
+import android.hardware.SensorManager
 import android.os.Bundle
+import android.util.Log
 import androidx.activity.ComponentActivity
+
+
+
+
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.runtime.*
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import com.runanywhere.kotlin_starter_example.security.ShakeDetector
 import com.runanywhere.kotlin_starter_example.services.ModelService
-import com.runanywhere.kotlin_starter_example.ui.screens.EntryScreen
-import com.runanywhere.kotlin_starter_example.ui.screens.TimelineScreen
-import com.runanywhere.kotlin_starter_example.ui.screens.RecordScreen
-import com.runanywhere.kotlin_starter_example.ui.screens.EntryDetailScreen
-import com.runanywhere.kotlin_starter_example.ui.screens.SettingsScreen
+import com.runanywhere.kotlin_starter_example.ui.screens.*
 import com.runanywhere.kotlin_starter_example.ui.theme.KotlinStarterTheme
-import android.util.Log
 import com.runanywhere.sdk.core.onnx.ONNX
 import com.runanywhere.sdk.foundation.bridge.extensions.CppBridgeModelPaths
 import com.runanywhere.sdk.llm.llamacpp.LlamaCPP
@@ -29,104 +29,136 @@ import com.runanywhere.sdk.public.SDKEnvironment
 import com.runanywhere.sdk.storage.AndroidPlatformContext
 
 class MainActivity : ComponentActivity() {
+
+
+
+    // --- AUTO LOCK STATES ---
+    private var isLocked by mutableStateOf(true)
+    private var encryptionKey by mutableStateOf<String?>(null)
+
+    // --- SENSOR STATES ---
+    private var sensorManager: SensorManager? = null
+    private var shakeDetector: ShakeDetector? = null
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        
-        // Initialize Android platform context FIRST - this sets up storage paths
-        // The SDK requires this before RunAnywhere.initialize() on Android
+
+        // SDK INITIALIZATION (Preserved)
         AndroidPlatformContext.initialize(this)
-        
-        // Initialize RunAnywhere SDK for development
         RunAnywhere.initialize(environment = SDKEnvironment.DEVELOPMENT)
-        
-        // Set the base directory for model storage
+
+        // Initialize Shake Detector
+        sensorManager = getSystemService(Context.SENSOR_SERVICE) as SensorManager
+        shakeDetector = ShakeDetector {
+            // Check if Quick Exit is enabled in Settings
+            val prefs = getSharedPreferences("prefs", Context.MODE_PRIVATE)
+            val isQuickExitEnabled = prefs.getBoolean("quick_exit_enabled", false)
+
+            if (isQuickExitEnabled && !isLocked) {
+                lockApp() // Trigger lock on shake
+            }
+        }
+
         val runanywherePath = java.io.File(filesDir, "runanywhere").absolutePath
         CppBridgeModelPaths.setBaseDirectory(runanywherePath)
-        
-        // Register backends FIRST - these must be registered before loading any models
-        // They provide the inference capabilities (TEXT_GENERATION, STT, TTS, VLM)
+
         try {
-            LlamaCPP.register(priority = 100)  // For LLM + VLM (GGUF models)
+            LlamaCPP.register(priority = 100)
         } catch (e: Throwable) {
-            // VLM native registration may fail if .so doesn't include nativeRegisterVlm;
-            // LLM text generation still works since it was registered before VLM in register()
-            Log.w("MainActivity", "LlamaCPP.register partial failure (VLM may be unavailable): ${e.message}")
+            Log.w("MainActivity", "LlamaCPP.register failure: ${e.message}")
         }
-        ONNX.register(priority = 100)      // For STT/TTS (ONNX models)
-        
-        // Register default models
+        ONNX.register(priority = 100)
         ModelService.registerDefaultModels()
-        
+
         setContent {
             KotlinStarterTheme {
-                RunAnywhereApp()
+                if (isLocked) {
+                    EntryScreen(onPinCorrect = { key ->
+                        encryptionKey = key
+                        isLocked = false
+                        registerShake() // Start listening when unlocked
+                    })
+                } else {
+                    RunAnywhereAppContent(encryptionKey)
+                }
             }
         }
     }
-}
 
-@Composable
-fun RunAnywhereApp() {
-    val navController = rememberNavController()
-    val modelService: ModelService = viewModel()
-    var encryptionKey by remember { mutableStateOf<String?>(null) }
-    
-    // This counter increments every time we return from RecordScreen
-    // TimelineScreen watches it and reloads the list when it changes
-    var timelineRefreshKey by remember { mutableStateOf(0) }
+    private fun lockApp() {
+        isLocked = true
+        encryptionKey = null
+        unregisterShake() // Stop listening when locked
+    }
 
-    NavHost(navController = navController, startDestination = "entry") {
+    private fun registerShake() {
+        val sensor = sensorManager?.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
+        sensorManager?.registerListener(shakeDetector, sensor, SensorManager.SENSOR_DELAY_UI)
+    }
 
-        composable("entry") {
-            EntryScreen(onPinCorrect = { key ->
-                encryptionKey = key
-                navController.navigate("timeline") {
-                    popUpTo("entry") { inclusive = true }
+    private fun unregisterShake() {
+        sensorManager?.unregisterListener(shakeDetector)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (!isLocked) registerShake() // Resume listening if already unlocked
+    }
+
+    override fun onPause() {
+        super.onPause()
+        unregisterShake() // Always stop listening when activity is paused
+    }
+
+    override fun onStop() {
+        super.onStop()
+        lockApp() // Auto-lock when app goes to background
+    }
+
+    @Composable
+    fun RunAnywhereAppContent(key: String?) {
+        val navController = rememberNavController()
+        val modelService: ModelService = viewModel()
+        var timelineRefreshKey by remember { mutableStateOf(0) }
+
+        NavHost(navController = navController, startDestination = "timeline") {
+            composable("timeline") {
+                key?.let { secureKey ->
+                    TimelineScreen(
+                        encryptionKey = secureKey,
+                        refreshTrigger = timelineRefreshKey,
+                        modelService = modelService,
+                        onNavigateToRecord = { navController.navigate("record") },
+                        onNavigateToDetail = { id -> navController.navigate("detail/$id") },
+                        onNavigateToSettings = { navController.navigate("settings") }
+                    )
                 }
-            })
-        }
-
-        composable("timeline") {
-            encryptionKey?.let { key ->
-                TimelineScreen(
-                    encryptionKey = key,
-                    refreshTrigger = timelineRefreshKey,
-                    modelService = modelService,
-                    onNavigateToRecord = { navController.navigate("record") },
-                    onNavigateToDetail = { id -> navController.navigate("detail/$id") },
-                    onNavigateToSettings = { navController.navigate("settings") }
-                )
             }
-        }
-
-        composable("settings") {
-            SettingsScreen(onNavigateBack = { navController.popBackStack() })
-        }
-
-        composable("record") {
-            encryptionKey?.let { key ->
-                RecordScreen(
-                    encryptionKey = key,
-                    onNavigateBack = {
-                        // Increment the key BEFORE navigating back
-                        // This tells TimelineScreen to reload its data
-                        timelineRefreshKey++
-                        navController.popBackStack()
-                    },
-                    modelService = modelService
-                )
+            composable("settings") {
+                SettingsScreen(onNavigateBack = { navController.popBackStack() })
             }
-        }
-
-        composable("detail/{incidentId}") { backStackEntry ->
-            val incidentId = backStackEntry.arguments?.getString("incidentId") ?: ""
-            encryptionKey?.let { key ->
-                EntryDetailScreen(
-                    incidentId = incidentId,
-                    encryptionKey = key,
-                    onNavigateBack = { navController.popBackStack() }
-                )
+            composable("record") {
+                key?.let { secureKey ->
+                    RecordScreen(
+                        encryptionKey = secureKey,
+                        onNavigateBack = {
+                            timelineRefreshKey++
+                            navController.popBackStack()
+                        },
+                        modelService = modelService
+                    )
+                }
+            }
+            composable("detail/{incidentId}") { backStackEntry ->
+                val incidentId = backStackEntry.arguments?.getString("incidentId") ?: ""
+                key?.let { secureKey ->
+                    EntryDetailScreen(
+                        incidentId = incidentId,
+                        encryptionKey = secureKey,
+                        onNavigateBack = { navController.popBackStack() }
+                    )
+                }
             }
         }
     }

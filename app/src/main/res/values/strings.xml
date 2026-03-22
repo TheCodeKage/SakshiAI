@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">SafeNotes</string>
+    <string name="app_name">Sakshi</string>
     
     <!-- Entry/PIN Setup -->
     <string name="setup_pin_title">Setup Your PIN</string>

@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">SafeNotes</string>
+    <string name="app_name">साक्षी</string>
     
     <!-- Entry/PIN Setup -->
     <string name="setup_pin_title">अपना पिन सेट करें</string>
