@@ -35,6 +35,8 @@ class MainActivity : ComponentActivity() {
     // --- AUTO LOCK STATES ---
     private var isLocked by mutableStateOf(true)
     private var encryptionKey by mutableStateOf<String?>(null)
+    private var lastPausedTime = 0L
+    private val AUTO_LOCK_DELAY_MS = 30_000L // 30 seconds
 
     // --- SENSOR STATES ---
     private var sensorManager: SensorManager? = null
@@ -107,18 +109,21 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        // Check if enough time has passed since pause to trigger auto-lock
+        if (!isLocked && lastPausedTime > 0 && 
+            (System.currentTimeMillis() - lastPausedTime) > AUTO_LOCK_DELAY_MS) {
+            lockApp()
+        }
         if (!isLocked) registerShake() // Resume listening if already unlocked
     }
 
     override fun onPause() {
         super.onPause()
+        lastPausedTime = System.currentTimeMillis()
         unregisterShake() // Always stop listening when activity is paused
     }
 
-    override fun onStop() {
-        super.onStop()
-        lockApp() // Auto-lock when app goes to background
-    }
+    // Removed onStop() - auto-lock now happens in onResume() based on time elapsed
 
     @Composable
     fun RunAnywhereAppContent(key: String?) {
