@@ -33,6 +33,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         
+
         // Initialize Android platform context FIRST - this sets up storage paths
         // The SDK requires this before RunAnywhere.initialize() on Android
         AndroidPlatformContext.initialize(this)

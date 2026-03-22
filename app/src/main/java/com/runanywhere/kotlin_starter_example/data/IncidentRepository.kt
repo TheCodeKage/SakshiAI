@@ -1,9 +1,11 @@
 package com.runanywhere.kotlin_starter_example.data
 
+import android.annotation.SuppressLint
 import android.content.ContentValues
 import android.content.Context
 import net.sqlcipher.database.SQLiteDatabase
 import net.sqlcipher.database.SQLiteOpenHelper
+import java.security.MessageDigest
 
 /**
  * Repository for managing incident records with SQLCipher encryption.
@@ -17,12 +19,12 @@ import net.sqlcipher.database.SQLiteOpenHelper
  * @param context Android context
  * @param passphrase Encryption passphrase (derived from user's PIN)
  */
-class IncidentRepository(context: Context, private val passphrase: String) :
+class IncidentRepository private constructor(context: Context, private val passphrase: String) :
     SQLiteOpenHelper(context, DATABASE_NAME, null, DATABASE_VERSION) {
 
     companion object {
         private const val DATABASE_NAME = "saakshi.db"
-        private const val DATABASE_VERSION = 1
+        private const val DATABASE_VERSION = 2
         private const val TABLE_NAME = "incidents"
         
         // Column names
@@ -36,12 +38,25 @@ class IncidentRepository(context: Context, private val passphrase: String) :
         private const val COL_PATTERN_FLAG = "patternFlag"
         private const val COL_SEVERITY_TAG = "severityTag"
         private const val COL_RAW_JSON = "rawJson"
+        private const val COL_AUDIO_PATH = "audioPath"
+        private const val COL_INTEGRITY_HASH = "integrityHash"
         
         /**
          * Delete the database file (used when encryption key is wrong/corrupted)
          */
         fun deleteDatabase(context: Context): Boolean {
             return context.deleteDatabase(DATABASE_NAME)
+        }
+
+        // Singleton Instance
+        @SuppressLint("StaticFieldLeak")
+        @Volatile
+        private var INSTANCE: IncidentRepository? = null
+
+        fun getInstance(context: Context, passphrase: String): IncidentRepository {
+            return INSTANCE ?: synchronized(this) {
+                INSTANCE ?: IncidentRepository(context.applicationContext, passphrase).also { INSTANCE = it }
+            }
         }
     }
 
@@ -62,7 +77,9 @@ class IncidentRepository(context: Context, private val passphrase: String) :
                 $COL_WITNESSES_PRESENT TEXT,
                 $COL_PATTERN_FLAG INTEGER,
                 $COL_SEVERITY_TAG TEXT,
-                $COL_RAW_JSON TEXT
+                $COL_RAW_JSON TEXT,
+                $COL_AUDIO_PATH TEXT,
+                $COL_INTEGRITY_HASH TEXT
             )
         """.trimIndent()
         
@@ -70,7 +87,10 @@ class IncidentRepository(context: Context, private val passphrase: String) :
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-        // Future schema upgrades would go here
+        if (oldVersion < 2) {
+            db.execSQL("ALTER TABLE $TABLE_NAME ADD COLUMN $COL_AUDIO_PATH TEXT")
+            db.execSQL("ALTER TABLE $TABLE_NAME ADD COLUMN $COL_INTEGRITY_HASH TEXT")
+        }
     }
 
     /**
@@ -91,56 +111,55 @@ class IncidentRepository(context: Context, private val passphrase: String) :
             put(COL_PATTERN_FLAG, if (record.patternFlag) 1 else 0)
             put(COL_SEVERITY_TAG, record.severityTag)
             put(COL_RAW_JSON, record.rawJson)
+            put(COL_AUDIO_PATH, record.audioFilePath)
+            put(COL_INTEGRITY_HASH, record.integrityHash)
         }
         
         db.insertWithOnConflict(TABLE_NAME, null, values, SQLiteDatabase.CONFLICT_REPLACE)
-        db.close()
+        // db.close() - Keep open for singleton
     }
 
     /**
      * Retrieve all incident records, ordered by timestamp (newest first).
      */
     fun getAllIncidents(): List<IncidentRecord> {
-        return try {
-            val db = getReadableDatabase(passphrase)
-            
-            val cursor = db.query(
-                TABLE_NAME,
-                null,
-                null,
-                null,
-                null,
-                null,
-                "$COL_TIMESTAMP DESC"
-            )
-            
-            val records = mutableListOf<IncidentRecord>()
-            
-            cursor.use {
-                while (it.moveToNext()) {
-                    val record = IncidentRecord(
-                        id = it.getString(it.getColumnIndexOrThrow(COL_ID)),
-                        timestamp = it.getLong(it.getColumnIndexOrThrow(COL_TIMESTAMP)),
-                        rawTranscript = it.getString(it.getColumnIndexOrThrow(COL_RAW_TRANSCRIPT)),
-                        incidentType = it.getString(it.getColumnIndexOrThrow(COL_INCIDENT_TYPE)),
-                        whoInvolved = it.getString(it.getColumnIndexOrThrow(COL_WHO_INVOLVED)),
-                        threatDocumented = it.getInt(it.getColumnIndexOrThrow(COL_THREAT_DOCUMENTED)) == 1,
-                        witnessesPresent = it.getString(it.getColumnIndexOrThrow(COL_WITNESSES_PRESENT)),
-                        patternFlag = it.getInt(it.getColumnIndexOrThrow(COL_PATTERN_FLAG)) == 1,
-                        severityTag = it.getString(it.getColumnIndexOrThrow(COL_SEVERITY_TAG)),
-                        rawJson = it.getString(it.getColumnIndexOrThrow(COL_RAW_JSON))
-                    )
-                    records.add(record)
-                }
+        // Removed try-catch to allow UI to handle/display DB errors
+        val db = getReadableDatabase(passphrase)
+        
+        val cursor = db.query(
+            TABLE_NAME,
+            null,
+            null,
+            null,
+            null,
+            null,
+            "$COL_TIMESTAMP DESC"
+        )
+        
+        val records = mutableListOf<IncidentRecord>()
+        
+        cursor.use {
+            while (it.moveToNext()) {
+                val record = IncidentRecord(
+                    id = it.getString(it.getColumnIndexOrThrow(COL_ID)),
+                    timestamp = it.getLong(it.getColumnIndexOrThrow(COL_TIMESTAMP)),
+                    rawTranscript = it.getString(it.getColumnIndexOrThrow(COL_RAW_TRANSCRIPT)),
+                    incidentType = it.getString(it.getColumnIndexOrThrow(COL_INCIDENT_TYPE)),
+                    whoInvolved = it.getString(it.getColumnIndexOrThrow(COL_WHO_INVOLVED)),
+                    threatDocumented = it.getInt(it.getColumnIndexOrThrow(COL_THREAT_DOCUMENTED)) == 1,
+                    witnessesPresent = it.getString(it.getColumnIndexOrThrow(COL_WITNESSES_PRESENT)),
+                    patternFlag = it.getInt(it.getColumnIndexOrThrow(COL_PATTERN_FLAG)) == 1,
+                    severityTag = it.getString(it.getColumnIndexOrThrow(COL_SEVERITY_TAG)),
+                    rawJson = it.getString(it.getColumnIndexOrThrow(COL_RAW_JSON)),
+                    audioFilePath = it.getString(it.getColumnIndexOrThrow(COL_AUDIO_PATH)),
+                    integrityHash = it.getString(it.getColumnIndexOrThrow(COL_INTEGRITY_HASH)) ?: ""
+                )
+                records.add(record)
             }
-            
-            db.close()
-            records
-        } catch (e: Exception) {
-            // If database can't be opened (wrong key, corruption, etc.), return empty list
-            // This prevents crash and allows the app to continue
-            emptyList()
         }
+        
+        // db.close() - Keep open for singleton
+        return records
     }
 
     /**
@@ -173,12 +192,14 @@ class IncidentRepository(context: Context, private val passphrase: String) :
                     witnessesPresent = it.getString(it.getColumnIndexOrThrow(COL_WITNESSES_PRESENT)),
                     patternFlag = it.getInt(it.getColumnIndexOrThrow(COL_PATTERN_FLAG)) == 1,
                     severityTag = it.getString(it.getColumnIndexOrThrow(COL_SEVERITY_TAG)),
-                    rawJson = it.getString(it.getColumnIndexOrThrow(COL_RAW_JSON))
+                    rawJson = it.getString(it.getColumnIndexOrThrow(COL_RAW_JSON)),
+                    audioFilePath = it.getString(it.getColumnIndexOrThrow(COL_AUDIO_PATH)),
+                    integrityHash = it.getString(it.getColumnIndexOrThrow(COL_INTEGRITY_HASH)) ?: ""
                 )
             }
         }
         
-        db.close()
+        // db.close()
         return record
     }
 
@@ -188,7 +209,7 @@ class IncidentRepository(context: Context, private val passphrase: String) :
     fun deleteIncident(id: String) {
         val db = getWritableDatabase(passphrase)
         db.delete(TABLE_NAME, "$COL_ID = ?", arrayOf(id))
-        db.close()
+        // db.close()
     }
 
     /**
@@ -202,7 +223,28 @@ class IncidentRepository(context: Context, private val passphrase: String) :
             count = cursor.getInt(0)
         }
         cursor.close()
-        db.close()
         return count
+    }
+
+    // New capability: Deep History Scan
+    fun countIncidentsInvolving(namePartial: String): Int {
+        if (namePartial.length < 3) return 0
+        val db = getReadableDatabase(passphrase)
+        // Check for partial matches in previous records
+        val cursor = db.rawQuery(
+            "SELECT COUNT(*) FROM $TABLE_NAME WHERE $COL_WHO_INVOLVED LIKE ?", 
+            arrayOf("%$namePartial%")
+        )
+        return cursor.use { 
+            if (it.moveToFirst()) it.getInt(0) else 0 
+        }
+    }
+
+    // SHA-256 Fingerprinting
+    fun generateIntegrityHash(record: IncidentRecord): String {
+        // Hash depends on Content + Timestamp + Secret. Changing ANY byte breaks the hash.
+        val input = "${record.id}|${record.timestamp}|${record.rawTranscript}|SAAKSHI_SECURE"
+        val bytes = MessageDigest.getInstance("SHA-256").digest(input.toByteArray())
+        return bytes.joinToString("") { "%02x".format(it) }
     }
 }
