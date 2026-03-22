@@ -17,6 +17,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.FileDownload
+import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material3.*
@@ -30,6 +31,7 @@ import androidx.compose.ui.unit.sp
 import com.runanywhere.kotlin_starter_example.data.EncryptedAudioFileManager
 import com.runanywhere.kotlin_starter_example.data.IncidentRecord
 import com.runanywhere.kotlin_starter_example.data.IncidentRepository
+import com.runanywhere.kotlin_starter_example.data.SecureZipExporter
 import com.runanywhere.kotlin_starter_example.services.LegalGuidanceService
 import com.runanywhere.kotlin_starter_example.ui.theme.*
 import kotlinx.coroutines.Dispatchers
@@ -52,6 +54,7 @@ fun EntryDetailScreen(
     val scope = rememberCoroutineScope()
     var record by remember { mutableStateOf<IncidentRecord?>(null) }
     var showDeleteDialog by remember { mutableStateOf(false) }
+    var showExportDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(incidentId) {
         record = withContext(Dispatchers.IO) {
@@ -93,6 +96,79 @@ fun EntryDetailScreen(
         )
     }
 
+    // Export Password Dialog
+    if (showExportDialog && record != null) {
+        var pdfPassword by remember { mutableStateOf("") }
+        var isExporting by remember { mutableStateOf(false) }
+
+        AlertDialog(
+            onDismissRequest = { if (!isExporting) showExportDialog = false },
+            title = { Text("Secure Export", color = TextPrimary) },
+            text = {
+                Column {
+                    Text(
+                        "Enter a password to protect your PDF report.",
+                        color = TextMuted,
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    )
+                    OutlinedTextField(
+                        value = pdfPassword,
+                        onValueChange = { pdfPassword = it },
+                        label = { Text("PDF Password") },
+                        singleLine = true,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = TextPrimary,
+                            unfocusedTextColor = TextPrimary,
+                            focusedBorderColor = AccentCyan,
+                            unfocusedBorderColor = TextMuted
+                        )
+                    )
+                    if (isExporting) {
+                        LinearProgressIndicator(
+                            modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
+                            color = AccentCyan
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        scope.launch(Dispatchers.IO) {
+                            try {
+                                isExporting = true
+                                val zipFile = SecureZipExporter.createSecureExport(context, record!!, pdfPassword)
+                                withContext(Dispatchers.Main) {
+                                    isExporting = false
+                                    showExportDialog = false
+                                    Toast.makeText(context, "Exported: ${zipFile.absolutePath}", Toast.LENGTH_LONG).show()
+                                }
+                            } catch (e: Exception) {
+                                withContext(Dispatchers.Main) {
+                                    isExporting = false
+                                    Toast.makeText(context, "Error: ${e.message}", Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = AccentCyan),
+                    enabled = pdfPassword.isNotEmpty() && !isExporting
+                ) {
+                    Text("Export ZIP")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { showExportDialog = false },
+                    enabled = !isExporting
+                ) {
+                    Text("Cancel", color = TextMuted)
+                }
+            },
+            containerColor = SurfaceCard
+        )
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -103,6 +179,9 @@ fun EntryDetailScreen(
                     }
                 },
                 actions = {
+                    IconButton(onClick = { showExportDialog = true }) {
+                        Icon(Icons.Rounded.Lock, "Secure Export", tint = AccentCyan)
+                    }
                     IconButton(onClick = { showDeleteDialog = true }) {
                         Icon(Icons.Rounded.Delete, "Delete", tint = Color(0xFFFF453A))
                     }
@@ -273,7 +352,7 @@ fun AudioPlayerCard(audioPath: String, context: android.content.Context) {
                 },
                 modifier = Modifier
                     .size(48.dp)
-                    .background(AccentCyan, androidx.compose.foundation.shape.CircleShape),
+                    .background(color = AccentCyan, shape = androidx.compose.foundation.shape.CircleShape),
                 colors = IconButtonDefaults.iconButtonColors(contentColor = Color.White)
             ) {
                 Icon(
@@ -309,27 +388,34 @@ fun AudioPlayerCard(audioPath: String, context: android.content.Context) {
                             // Or better: let's wrap it in a simple WAV header if we can, or just save as .pcm (audacity can open)
                             // For simplicity and robustness, saving as .pcm (raw 16bit 16kHz mono)
                             
-                            // Saving to Downloads (API 29+) or Audio (API < 29)
+                            // Saving to Downloads (API 29+) or separate file (API < 29)
                             val resolver = context.contentResolver
-                            val contentValues = ContentValues().apply {
-                                put(MediaStore.MediaColumns.DISPLAY_NAME, filename)
-                                put(MediaStore.MediaColumns.MIME_TYPE, "audio/x-pcm")
-                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                                    put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
-                                }
-                            }
                             
                             val uri = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                                val contentValues = ContentValues().apply {
+                                    put(MediaStore.MediaColumns.DISPLAY_NAME, filename)
+                                    put(MediaStore.MediaColumns.MIME_TYPE, "audio/x-pcm")
+                                    put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
+                                }
                                 resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, contentValues)
                             } else {
-                                resolver.insert(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, contentValues)
+                                null
                             }
-                            uri?.let {
-                                resolver.openOutputStream(it)?.use { os ->
+                            
+                            if (uri != null) {
+                                resolver.openOutputStream(uri)?.use { os ->
                                     os.write(pcmData)
                                 }
                                 withContext(Dispatchers.Main) {
-                                    Toast.makeText(context, "Saved to Downloads: $filename", Toast.LENGTH_LONG).show()
+                                    Toast.makeText(context, "Saved to Downloads", Toast.LENGTH_LONG).show()
+                                }
+                            } else {
+                                // Fallback: Save to app private directory
+                                val file = File(context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS), filename)
+                                file.parentFile?.mkdirs()
+                                file.writeBytes(pcmData)
+                                withContext(Dispatchers.Main) {
+                                    Toast.makeText(context, "Saved to ${file.absolutePath}", Toast.LENGTH_LONG).show()
                                 }
                             }
                         } catch (e: Exception) {
@@ -434,3 +520,4 @@ private fun LegalContextCard(record: IncidentRecord) {
         }
     }
 }
+

@@ -29,7 +29,12 @@ object PdfExporter {
      * @param password Password to encrypt the PDF (optional, but recommended)
      * @return File object pointing to the generated PDF
      */
-    fun export(context: Context, incidents: List<IncidentRecord>, password: String? = null): File {
+    fun export(
+        context: Context,
+        incidents: List<IncidentRecord>,
+        password: String? = null,
+        sessionKeyToPrint: String? = null
+    ): File {
         val fileName = "Sakshi_Report_${System.currentTimeMillis()}.pdf"
         val file = File(context.getExternalFilesDir(null), fileName)
         
@@ -64,6 +69,10 @@ object PdfExporter {
         document.add(Paragraph("Exported: $exportDate", bodyFont))
         document.add(Paragraph("Total entries: ${incidents.size}", bodyFont))
         document.add(Paragraph("Status: Authenticated & Encrypted", bodyFont))
+        if (!sessionKeyToPrint.isNullOrBlank()) {
+            document.add(Paragraph("Session Key (media unlock): $sessionKeyToPrint", bodyFont))
+            document.add(Paragraph("Keep this key safe. It decrypts the audio/photos in the ZIP.", tagFont))
+        }
         document.add(Paragraph("----------------------------------------------------------------", bodyFont))
         document.add(Paragraph(" "))
 

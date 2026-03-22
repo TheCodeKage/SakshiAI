@@ -79,6 +79,9 @@ dependencies {
     implementation(libs.kotlinx.coroutines.core)
     implementation(libs.kotlinx.coroutines.android)
     implementation("org.apache.commons:commons-compress:1.27.1")
+
+    // Password-protected ZIP (AES)
+    implementation("net.lingala.zip4j:zip4j:2.11.5")
     
     // PDF Generation
     implementation("com.itextpdf:itextg:5.5.10")
