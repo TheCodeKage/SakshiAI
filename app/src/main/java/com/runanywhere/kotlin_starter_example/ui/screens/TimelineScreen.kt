@@ -1,6 +1,8 @@
 package com.runanywhere.kotlin_starter_example.ui.screens
 
+import android.content.Intent
 import android.widget.Toast
+import androidx.core.content.FileProvider
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -48,9 +50,6 @@ fun TimelineScreen(
     // Use Singleton to avoid DB lock/lag issues
     val repository = remember { IncidentRepository.getInstance(context, encryptionKey) }
 
-    // Repository initialized with the key provided by MainActivity
-    val repository = remember(encryptionKey) { IncidentRepository(context, encryptionKey) }
-
     var incidents by remember { mutableStateOf(listOf<IncidentRecord>()) }
     var isExporting by remember { mutableStateOf(false) }
     var exportPassword by remember { mutableStateOf("") }
@@ -66,13 +65,11 @@ fun TimelineScreen(
             }
         } catch (e: Exception) {
             // Database error (wrong key, corrupted, etc.)
-            dbError = "DB Error: ${e.message}"
             dbError = e.message
             incidents = emptyList()
         }
     }
 
-    // ZIP Export Warning Dialog with Password Input
     // Reload list when AI background processing finishes
     LaunchedEffect(modelService.processingState) {
         if (modelService.processingState is ModelService.ProcessingState.Done) {
@@ -84,7 +81,7 @@ fun TimelineScreen(
         }
     }
 
-    // PDF Export Logic
+    // ZIP Export Warning Dialog with Password Input
     if (showExportWarning) {
         AlertDialog(
             onDismissRequest = {
@@ -132,23 +129,14 @@ fun TimelineScreen(
                                 withContext(Dispatchers.IO) {
                                     SecureZipExporter.createGlobalSecureExport(context, incidents, passwordOrEmpty)
                                 }
-                                val uri = FileProvider.getUriForFile(
-                                    context,
-                                    "${context.packageName}.provider",
-                                    file
-                                )
-                                val intent = Intent(Intent.ACTION_VIEW).apply {
-                                    setDataAndType(uri, "application/pdf")
-                                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                                 withContext(Dispatchers.Main) {
                                     Toast.makeText(context, "ZIP Saved to Downloads", Toast.LENGTH_LONG).show()
                                 }
-                                context.startActivity(intent)
-                            } catch (e: Exception) {
-                                // Silent fail
                             } catch (e: Throwable) {
                                 e.printStackTrace()
-                                dbError = "Export failed: ${'$'}{e.message ?: e::class.java.simpleName}"
+                                withContext(Dispatchers.Main) {
+                                    dbError = "Export failed: ${e.message ?: e::class.java.simpleName}"
+                                }
                             } finally {
                                 isExporting = false
                             }
@@ -288,7 +276,7 @@ fun TimelineScreen(
 }
 
 @Composable
-private fun IncidentCard(record: IncidentRecord, onClick: () -> Unit) {
+fun IncidentCard(record: IncidentRecord, onClick: () -> Unit) {
     val dateFormat = SimpleDateFormat("dd MMM yyyy, HH:mm", Locale.getDefault())
 
     Card(
@@ -353,7 +341,7 @@ private fun IncidentCard(record: IncidentRecord, onClick: () -> Unit) {
 }
 
 @Composable
-private fun IncidentPhotoThumb(path: String, count: Int) {
+fun IncidentPhotoThumb(path: String, count: Int) {
     val ctx = LocalContext.current
     var bitmap by remember(path) { mutableStateOf<android.graphics.Bitmap?>(null) }
 
@@ -396,7 +384,7 @@ private fun IncidentPhotoThumb(path: String, count: Int) {
 }
 
 @Composable
-private fun SeverityChip(severity: String) {
+fun SeverityChip(severity: String) {
     val (bg, fg) = when (severity) {
         "Immediate Risk" -> Color(0xFF2A0000) to Color(0xFFFF6B6B)
         "Concerning Pattern" -> Color(0xFF2A1500) to Color(0xFFFFBF47)
