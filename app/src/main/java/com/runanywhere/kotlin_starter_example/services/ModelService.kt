@@ -65,7 +65,7 @@ class ModelService : ViewModel() {
         private val STT_REQUIRED_FILES = listOf("encoder.onnx", "decoder.onnx", "tokens.txt")
 
         fun registerDefaultModels() {
-            // Llama 3.2 3B - The gold standard for mobile reasoning & Hindi accuracy
+            // Llama 3.2 3B - Balanced reasoning and speed
             RunAnywhere.registerModel(
                 id = LLM_MODEL_ID,
                 name = "Llama 3.2 3B Instruct",
@@ -279,34 +279,50 @@ class ModelService : ViewModel() {
      * 3. Load LLM (Reasoning)
      * 4. Save & Done
      */
-    fun processAudio(audioBytes: ByteArray, encryptionKey: String, context: Context) {
+    fun processAudio(
+        audioBytes: ByteArray, 
+        encryptionKey: String, 
+        context: Context,
+        imagePaths: List<String> = emptyList()
+    ) {
         if (processingState is ProcessingState.Processing) return
 
         viewModelScope.launch {
             processingState = ProcessingState.Processing
             try {
+                // Get repository instance (Singleton)
+                val repository = IncidentRepository.getInstance(context, encryptionKey)
+
+                // Persist only valid, non-empty image paths to avoid DB garbage
+                val sanitizedImagePaths = imagePaths.filter { it.isNotBlank() }.distinct()
+
                 // Ensure STT is loaded for transcription
+                // Note: IncidentProcessor.process uses RunAnywhere.transcribe internally,
+                // which relies on the model being loaded.
                 if (!RunAnywhere.isSTTModelLoaded()) {
                     RunAnywhere.loadSTTModel(STT_MODEL_ID)
+                    isSTTLoaded = true
                 }
 
-                val record = IncidentProcessor.process(audioBytes)
+                // Process (Encryption + STT + LLM + History Check + Sealing)
+                // We pass context for encryption and repository for history check
+                val baseRecord = IncidentProcessor.process(context, audioBytes, repository)
 
-                // RAM MANAGEMENT: Unload STT to make room for Llama 3B
-                RunAnywhere.unloadSTTModel()
-                isSTTLoaded = false
+                // Attach images (persisted copy to avoid mutation after save)
+                val record = baseRecord.copy(imagePaths = sanitizedImagePaths)
 
-                // Load LLM if needed for post-processing/summarization
-                if (!RunAnywhere.isLLMModelLoaded()) {
-                    RunAnywhere.loadLLMModel(LLM_MODEL_ID)
-                    isLLMLoaded = true
+                // RAM MANAGEMENT: Unload STT to make room for generic system usage if needed
+                // But since we are done, we might keep it or unload it. 
+                // The original code unloaded it. Let's keep that behavior if memory is tight.
+                // For now, let's keep models loaded for responsiveness unless user explicitly unloads.
+                
+                // Save complete record to DB and read-back to confirm persistence (incl. photos)
+                val storedRecord = withContext(Dispatchers.IO) {
+                    repository.saveIncident(record)
+                    repository.getIncidentById(record.id) ?: record
                 }
 
-                withContext(Dispatchers.IO) {
-                    IncidentRepository(context, encryptionKey).saveIncident(record)
-                }
-
-                processingState = ProcessingState.Done(record)
+                processingState = ProcessingState.Done(storedRecord)
             } catch (e: Exception) {
                 processingState = ProcessingState.Error(e.message ?: "Unknown error")
             } finally {

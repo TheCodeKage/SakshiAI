@@ -1,4 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <paths>
-    <external-files-path name="saakshi_exports" path="SaakshiAI/" />
+    <!-- External app-specific files (exports, photos) -->
+    <external-files-path name="saakshi_exports" path="." />
+    <!-- Temp camera captures in external files dir -->
+    <external-files-path name="saakshi_temp_camera" path="temp_camera/" />
+    <!-- Cache fallbacks for camera/temp -->
+    <cache-path name="saakshi_cache" path="." />
+    <external-cache-path name="saakshi_external_cache" path="." />
 </paths>

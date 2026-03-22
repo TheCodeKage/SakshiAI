@@ -1,6 +1,7 @@
 package com.runanywhere.kotlin_starter_example.ui.screens
 
-import android.content.Intent
+import android.widget.Toast
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -14,13 +15,15 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.core.content.FileProvider
 import com.runanywhere.kotlin_starter_example.data.IncidentRecord
 import com.runanywhere.kotlin_starter_example.data.IncidentRepository
-import com.runanywhere.kotlin_starter_example.data.PdfExporter
+import com.runanywhere.kotlin_starter_example.data.SecureZipExporter
+import com.runanywhere.kotlin_starter_example.data.EncryptedImageManager
 import com.runanywhere.kotlin_starter_example.services.ModelService
 import com.runanywhere.kotlin_starter_example.ui.theme.*
 import kotlinx.coroutines.Dispatchers
@@ -42,12 +45,15 @@ fun TimelineScreen(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    // Use Singleton to avoid DB lock/lag issues
+    val repository = remember { IncidentRepository.getInstance(context, encryptionKey) }
 
     // Repository initialized with the key provided by MainActivity
     val repository = remember(encryptionKey) { IncidentRepository(context, encryptionKey) }
 
     var incidents by remember { mutableStateOf(listOf<IncidentRecord>()) }
     var isExporting by remember { mutableStateOf(false) }
+    var exportPassword by remember { mutableStateOf("") }
     var showExportWarning by remember { mutableStateOf(false) }
     var dbError by remember { mutableStateOf<String?>(null) }
 
@@ -55,12 +61,18 @@ fun TimelineScreen(
     LaunchedEffect(refreshTrigger, encryptionKey) {
         try {
             incidents = withContext(Dispatchers.IO) { repository.getAllIncidents() }
+            if (incidents.isEmpty()) {
+                dbError = null // Clear error if successful but empty
+            }
         } catch (e: Exception) {
+            // Database error (wrong key, corrupted, etc.)
+            dbError = "DB Error: ${e.message}"
             dbError = e.message
             incidents = emptyList()
         }
     }
 
+    // ZIP Export Warning Dialog with Password Input
     // Reload list when AI background processing finishes
     LaunchedEffect(modelService.processingState) {
         if (modelService.processingState is ModelService.ProcessingState.Done) {
@@ -75,27 +87,50 @@ fun TimelineScreen(
     // PDF Export Logic
     if (showExportWarning) {
         AlertDialog(
-            onDismissRequest = { showExportWarning = false },
-            title = { Text("Export Warning", color = TextPrimary) },
+            onDismissRequest = {
+                showExportWarning = false
+                exportPassword = ""
+            },
+            title = { Text("Secure ZIP Export", color = TextPrimary) },
             text = {
-                Text(
-                    "This PDF contains sensitive information. Ensure you:\n\n" +
-                            "• Store it in a secure location\n" +
-                            "• Delete it after sharing with your legal advisor\n" +
-                            "• Never leave it on an unencrypted device\n\n" +
-                            "Continue with export?",
-                    color = TextMuted
-                )
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(
+                        "Create an encrypted ZIP with a password-protected PDF plus all audio and photo evidence.",
+                        color = TextMuted
+                    )
+                    OutlinedTextField(
+                        value = exportPassword,
+                        onValueChange = { exportPassword = it },
+                        label = { Text("ZIP/PDF Password (Optional)") },
+                        placeholder = { Text("Leave blank for no password") },
+                        singleLine = true,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = AccentCyan,
+                            unfocusedBorderColor = TextMuted,
+                            focusedTextColor = TextPrimary,
+                            unfocusedTextColor = TextPrimary
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Text(
+                        "• File saved to Downloads\n• Keep the password separate\n• ZIP contains all incidents (audio, photos, PDF)",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = TextMuted
+                    )
+                }
             },
             confirmButton = {
                 TextButton(
                     onClick = {
                         showExportWarning = false
                         isExporting = true
+                        val pwd = exportPassword
+                        exportPassword = "" // Clear immediately
                         scope.launch {
                             try {
-                                val file = withContext(Dispatchers.IO) {
-                                    PdfExporter.export(context, incidents)
+                                val passwordOrEmpty = if (pwd.isBlank()) "" else pwd
+                                withContext(Dispatchers.IO) {
+                                    SecureZipExporter.createGlobalSecureExport(context, incidents, passwordOrEmpty)
                                 }
                                 val uri = FileProvider.getUriForFile(
                                     context,
@@ -105,21 +140,29 @@ fun TimelineScreen(
                                 val intent = Intent(Intent.ACTION_VIEW).apply {
                                     setDataAndType(uri, "application/pdf")
                                     addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                withContext(Dispatchers.Main) {
+                                    Toast.makeText(context, "ZIP Saved to Downloads", Toast.LENGTH_LONG).show()
                                 }
                                 context.startActivity(intent)
                             } catch (e: Exception) {
                                 // Silent fail
+                            } catch (e: Throwable) {
+                                e.printStackTrace()
+                                dbError = "Export failed: ${'$'}{e.message ?: e::class.java.simpleName}"
                             } finally {
                                 isExporting = false
                             }
                         }
                     }
                 ) {
-                    Text("Export", color = AccentCyan)
+                    Text("Export All Data (ZIP)", color = AccentCyan)
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showExportWarning = false }) {
+                TextButton(onClick = {
+                    showExportWarning = false
+                    exportPassword = ""
+                }) {
                     Text("Cancel", color = TextMuted)
                 }
             },
@@ -144,7 +187,7 @@ fun TimelineScreen(
                                     color = AccentCyan
                                 )
                             } else {
-                                Icon(Icons.Rounded.FileDownload, "Export PDF", tint = AccentCyan)
+                                Icon(Icons.Rounded.FileDownload, "Backup All", tint = AccentCyan)
                             }
                         }
                     }
@@ -285,6 +328,17 @@ private fun IncidentCard(record: IncidentRecord, onClick: () -> Unit) {
                     style = MaterialTheme.typography.bodySmall,
                     color = TextMuted
                 )
+            } else if (record.audioFilePath != null) {
+                Text(
+                    "Audio Record (No Transcript)",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = AccentCyan
+                )
+            }
+
+            if (record.imagePaths.isNotEmpty()) {
+                Spacer(Modifier.height(6.dp))
+                IncidentPhotoThumb(path = record.imagePaths.first(), count = record.imagePaths.size)
             }
 
             if (record.patternFlag) {
@@ -295,6 +349,49 @@ private fun IncidentCard(record: IncidentRecord, onClick: () -> Unit) {
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun IncidentPhotoThumb(path: String, count: Int) {
+    val ctx = LocalContext.current
+    var bitmap by remember(path) { mutableStateOf<android.graphics.Bitmap?>(null) }
+
+    LaunchedEffect(path) {
+        withContext(Dispatchers.IO) {
+            val bytes = EncryptedImageManager.getDecryptedImage(ctx, path)
+            if (bytes.isNotEmpty()) {
+                val opts = android.graphics.BitmapFactory.Options().apply { inSampleSize = 4 }
+                val bmp = android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size, opts)
+                withContext(Dispatchers.Main) { bitmap = bmp }
+            }
+        }
+    }
+
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Card(
+            modifier = Modifier.size(54.dp),
+            shape = RoundedCornerShape(8.dp),
+            colors = CardDefaults.cardColors(containerColor = SurfaceCard)
+        ) {
+            if (bitmap != null) {
+                Image(
+                    bitmap = bitmap!!.asImageBitmap(),
+                    contentDescription = "Photo thumb",
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
+            } else {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp, color = AccentCyan)
+                }
+            }
+        }
+        Text(
+            if (count > 1) "$count photos" else "1 photo",
+            style = MaterialTheme.typography.labelSmall,
+            color = TextPrimary
+        )
     }
 }
 

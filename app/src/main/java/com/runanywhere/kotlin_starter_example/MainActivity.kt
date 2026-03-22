@@ -43,6 +43,10 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        
+
+        // Initialize Android platform context FIRST - this sets up storage paths
+        // The SDK requires this before RunAnywhere.initialize() on Android
 
         // SDK INITIALIZATION (Preserved)
         AndroidPlatformContext.initialize(this)
