@@ -65,7 +65,7 @@ class ModelService : ViewModel() {
         private val STT_REQUIRED_FILES = listOf("encoder.onnx", "decoder.onnx", "tokens.txt")
 
         fun registerDefaultModels() {
-            // Llama 3.2 3B - The gold standard for mobile reasoning & Hindi accuracy
+            // Llama 3.2 3B - Balanced reasoning and speed
             RunAnywhere.registerModel(
                 id = LLM_MODEL_ID,
                 name = "Llama 3.2 3B Instruct",
@@ -279,7 +279,12 @@ class ModelService : ViewModel() {
      * 3. Load LLM (Reasoning)
      * 4. Save & Done
      */
-    fun processAudio(audioBytes: ByteArray, encryptionKey: String, context: Context) {
+    fun processAudio(
+        audioBytes: ByteArray, 
+        encryptionKey: String, 
+        context: Context,
+        imagePaths: List<String> = emptyList()
+    ) {
         if (processingState is ProcessingState.Processing) return
 
         viewModelScope.launch {
@@ -287,6 +292,9 @@ class ModelService : ViewModel() {
             try {
                 // Get repository instance (Singleton)
                 val repository = IncidentRepository.getInstance(context, encryptionKey)
+
+                // Persist only valid, non-empty image paths to avoid DB garbage
+                val sanitizedImagePaths = imagePaths.filter { it.isNotBlank() }.distinct()
 
                 // Ensure STT is loaded for transcription
                 // Note: IncidentProcessor.process uses RunAnywhere.transcribe internally,
@@ -298,19 +306,23 @@ class ModelService : ViewModel() {
 
                 // Process (Encryption + STT + LLM + History Check + Sealing)
                 // We pass context for encryption and repository for history check
-                val record = IncidentProcessor.process(context, audioBytes, repository)
+                val baseRecord = IncidentProcessor.process(context, audioBytes, repository)
+
+                // Attach images (persisted copy to avoid mutation after save)
+                val record = baseRecord.copy(imagePaths = sanitizedImagePaths)
 
                 // RAM MANAGEMENT: Unload STT to make room for generic system usage if needed
                 // But since we are done, we might keep it or unload it. 
                 // The original code unloaded it. Let's keep that behavior if memory is tight.
                 // For now, let's keep models loaded for responsiveness unless user explicitly unloads.
                 
-                // Save complete record to DB
-                withContext(Dispatchers.IO) {
+                // Save complete record to DB and read-back to confirm persistence (incl. photos)
+                val storedRecord = withContext(Dispatchers.IO) {
                     repository.saveIncident(record)
+                    repository.getIncidentById(record.id) ?: record
                 }
 
-                processingState = ProcessingState.Done(record)
+                processingState = ProcessingState.Done(storedRecord)
             } catch (e: Exception) {
                 processingState = ProcessingState.Error(e.message ?: "Unknown error")
             } finally {

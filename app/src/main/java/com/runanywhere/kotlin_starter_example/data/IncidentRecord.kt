@@ -30,7 +30,8 @@ data class IncidentRecord(
     val rawJson: String = "",
     // NEW: Forensic Evidence Fields
     val audioFilePath: String? = null, // Path to AES-256 encrypted file
-    val integrityHash: String = ""     // SHA-256 Digital Seal
+    val integrityHash: String = "",    // SHA-256 Digital Seal
+    val imagePaths: List<String> = emptyList() // NEW: Encrypted image file paths
 )
 
 // Valid severityTag values:

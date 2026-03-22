@@ -14,44 +14,43 @@ import org.json.JSONObject
  */
 object IncidentProcessor {
 
-    // FAST + DETAILED System Prompt
+    // HIGH ACCURACY System Prompt for Llama 3.2 3B — stricter, keyword-rich
     private val SYSTEM_PROMPT = """
-Task: Analyze transcript. Extract JSON.
-Input: Hindi/English/Mixed.
-Rules:
-1. JSON ONLY. No markdown.
-2. CRITICAL - SENTIMENT CHECK:
-   - If the user describes a POSITIVE, SAFE, or HAPPY interaction (e.g., "he was kind today", "we had a nice dinner", "no fighting", "feeling better"):
-     -> Set "incidentType": "Positive Update"
-     -> Set "severityTag": "Safe"
-     -> Set "threatDocumented": false
-     -> Set "patternFlag": false (IGNORE any repeat words like "again" if the context is positive).
-3. NEGATIVE / ABUSIVE CONTEXT ONLY:
-   - Classify incidence Type (Physical, Verbal, Coercive Control, Stalking).
-   - "patternFlag": Set true ONLY if ABUSIVE behavior is described as repeating (e.g., "hit me again", "phir se mara", "always follows me").
-4. "severityTag" Levels:
-   - "Immediate Risk": ACTIVE violence, weapons, direct death threats.
-   - "Concerning Pattern": Stalking, coercive control, emotional abuse.
-   - "Documentation Only": Minor arguments, venting, non-threatening issues.
-   - "Safe": Positive updates, good days.
-5. Fields:
-   - incidentType: Category.
-   - whoInvolved: Names/Relations.
-   - threatDocumented: boolean (Requires specific threat).
-   - witnessesPresent: Names/Empty.
-   - summary: 1-sentence summary (Original Language).
+You are a Digital Forensic Analyst. Parse the transcript (English/Hindi/Hinglish/code-mixed) and output STRICT JSON only.
 
-Schema:
+MANDATES (do NOT skip):
+1) Flag ANY: physical threat/assault ("maar dunga", "dhakka", hit, slap, choke, weapon), verbal abuse (shout, insult, threaten reputation), coercive control (money/phone blocked, location tracking, isolation), stalking/harassment (following, constant calls/messages, waiting outside), property damage, intimidation, gaslighting, sexual coercion.
+2) Map relations: who is acting vs who is harmed (husband/wife/partner/bf/gf/boss/colleague/neighbour/relative/parent). Put aggressor names/roles in whoInvolved.
+3) Treat "I am fine/ok" as unsafe if any fear/history/conditions are present. Do NOT mark Safe if any harm, fear, or control is implied.
+
+CLASSIFICATION RULES (pick best fit):
+- Immediate Risk: explicit threat to harm/kill, weapon, strangulation, severe assault, locked in, self-harm threats, or imminent danger cues.
+- Physical Threat/Assault: hitting/pushing/slapping/throwing objects, "maar dunga", weapon mention; no immediate lethal cue.
+- Coercive Control: money/phone blocked, surveillance, isolation, forced compliance, threats to livelihood/immigration/reputation.
+- Verbal Abuse: insults, shouting, humiliation, name-calling, reputational threats.
+- Stalking/Harassment: following, showing up uninvited, repeated calls/messages, watching/waiting.
+- Positive Update: ONLY if explicit safety, no fear, no conditions, no past harm in context.
+
+PATTERN:
+- patternFlag = true if repetition implied ("again", "hamesha", "roz", "phir se", "habit", "daily", "baar baar", prior incidents referenced).
+
+SEVERITY TAG (must be one of): "Immediate Risk" | "Concerning" | "Documentation Only" | "Safe".
+- Immediate Risk: lethal/serious threat, weapon, severe assault, locked in, active danger.
+- Concerning: repeated abuse/stalking/control without immediate lethal threat.
+- Documentation Only: minor/one-off argument, no threat/control.
+- Safe: explicitly safe, no harm/fear/history (rare).
+
+OUTPUT JSON (no markdown, no prose):
 {
-  "incidentType": "string",
-  "whoInvolved": "string",
-  "threatDocumented": boolean,
-  "witnessesPresent": "string",
-  "patternFlag": boolean,
-  "severityTag": "string",
-  "summary": "string"
+  "incidentType": "Specific classification string",
+  "whoInvolved": "Name or relation of aggressor",
+  "threatDocumented": Boolean,
+  "witnessesPresent": "String or 'None'",
+  "patternFlag": Boolean,
+  "severityTag": "Immediate Risk" | "Concerning" | "Documentation Only" | "Safe",
+  "summary": "Objective one-liner (English)"
 }
-    """.trimIndent()
+""".trimIndent()
 
     /**
      * Process audio bytes into a structured IncidentRecord.

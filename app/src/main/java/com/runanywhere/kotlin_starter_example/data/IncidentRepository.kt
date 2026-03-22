@@ -24,7 +24,7 @@ class IncidentRepository private constructor(context: Context, private val passp
 
     companion object {
         private const val DATABASE_NAME = "saakshi.db"
-        private const val DATABASE_VERSION = 2
+        private const val DATABASE_VERSION = 3
         private const val TABLE_NAME = "incidents"
         
         // Column names
@@ -40,6 +40,7 @@ class IncidentRepository private constructor(context: Context, private val passp
         private const val COL_RAW_JSON = "rawJson"
         private const val COL_AUDIO_PATH = "audioPath"
         private const val COL_INTEGRITY_HASH = "integrityHash"
+        private const val COL_IMAGE_PATHS = "imagePaths"
         
         /**
          * Delete the database file (used when encryption key is wrong/corrupted)
@@ -79,7 +80,8 @@ class IncidentRepository private constructor(context: Context, private val passp
                 $COL_SEVERITY_TAG TEXT,
                 $COL_RAW_JSON TEXT,
                 $COL_AUDIO_PATH TEXT,
-                $COL_INTEGRITY_HASH TEXT
+                $COL_INTEGRITY_HASH TEXT,
+                $COL_IMAGE_PATHS TEXT
             )
         """.trimIndent()
         
@@ -90,6 +92,9 @@ class IncidentRepository private constructor(context: Context, private val passp
         if (oldVersion < 2) {
             db.execSQL("ALTER TABLE $TABLE_NAME ADD COLUMN $COL_AUDIO_PATH TEXT")
             db.execSQL("ALTER TABLE $TABLE_NAME ADD COLUMN $COL_INTEGRITY_HASH TEXT")
+        }
+        if (oldVersion < 3) {
+            db.execSQL("ALTER TABLE $TABLE_NAME ADD COLUMN $COL_IMAGE_PATHS TEXT")
         }
     }
 
@@ -113,6 +118,7 @@ class IncidentRepository private constructor(context: Context, private val passp
             put(COL_RAW_JSON, record.rawJson)
             put(COL_AUDIO_PATH, record.audioFilePath)
             put(COL_INTEGRITY_HASH, record.integrityHash)
+            put(COL_IMAGE_PATHS, record.imagePaths.filter { it.isNotBlank() }.joinToString(","))
         }
         
         db.insertWithOnConflict(TABLE_NAME, null, values, SQLiteDatabase.CONFLICT_REPLACE)
@@ -152,7 +158,12 @@ class IncidentRepository private constructor(context: Context, private val passp
                     severityTag = it.getString(it.getColumnIndexOrThrow(COL_SEVERITY_TAG)),
                     rawJson = it.getString(it.getColumnIndexOrThrow(COL_RAW_JSON)),
                     audioFilePath = it.getString(it.getColumnIndexOrThrow(COL_AUDIO_PATH)),
-                    integrityHash = it.getString(it.getColumnIndexOrThrow(COL_INTEGRITY_HASH)) ?: ""
+                    integrityHash = it.getString(it.getColumnIndexOrThrow(COL_INTEGRITY_HASH)) ?: "",
+                    imagePaths = it.getString(it.getColumnIndexOrThrow(COL_IMAGE_PATHS))
+                        ?.split(",")
+                        ?.map { p -> p.trim() }
+                        ?.filter { p -> p.isNotBlank() }
+                        ?: emptyList()
                 )
                 records.add(record)
             }
@@ -194,7 +205,12 @@ class IncidentRepository private constructor(context: Context, private val passp
                     severityTag = it.getString(it.getColumnIndexOrThrow(COL_SEVERITY_TAG)),
                     rawJson = it.getString(it.getColumnIndexOrThrow(COL_RAW_JSON)),
                     audioFilePath = it.getString(it.getColumnIndexOrThrow(COL_AUDIO_PATH)),
-                    integrityHash = it.getString(it.getColumnIndexOrThrow(COL_INTEGRITY_HASH)) ?: ""
+                    integrityHash = it.getString(it.getColumnIndexOrThrow(COL_INTEGRITY_HASH)) ?: "",
+                    imagePaths = it.getString(it.getColumnIndexOrThrow(COL_IMAGE_PATHS))
+                        ?.split(",")
+                        ?.map { p -> p.trim() }
+                        ?.filter { p -> p.isNotBlank() }
+                        ?: emptyList()
                 )
             }
         }
